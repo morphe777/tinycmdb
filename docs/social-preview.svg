@@ -9,11 +9,11 @@
   <text x="360" y="300" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
         font-size="86" font-weight="600" fill="#f1f4f3" letter-spacing="-2">TinyCMDB</text>
   <text x="362" y="356" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
-        font-size="30" fill="#8fa5a1">L'inventaire d'un homelab, et rien de plus.</text>
+        font-size="30" fill="#8fa5a1">A homelab inventory, and nothing more.</text>
   <g transform="translate(362 400)" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24">
     <rect x="0" y="0" width="13" height="13" rx="3" fill="#4fb0ac"/>
-    <text x="26" y="12" fill="#c3d2cf">découvert par le collecteur</text>
+    <text x="26" y="12" fill="#c3d2cf">discovered by the collector</text>
     <rect x="340" y="0" width="13" height="13" rx="3" fill="#b793d3"/>
-    <text x="366" y="12" fill="#c3d2cf">saisi à la main</text>
+    <text x="366" y="12" fill="#c3d2cf">entered by hand</text>
   </g>
 </svg>

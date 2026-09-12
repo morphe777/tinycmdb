@@ -2,429 +2,416 @@
 
 # TinyCMDB
 
-**L'inventaire d'un homelab, et rien de plus.** Un collecteur qui découvre
-Proxmox, Docker, les vulnérabilités et les mises à jour disponibles, et une
-console web qui distingue à chaque champ ce qu'il a écrit de ce que vous avez
-saisi.
+**A homelab inventory, and nothing more.** A collector that discovers Proxmox
+and Docker, scans images for vulnerabilities and pending updates, and a web
+console that tells you, field by field, what it wrote and what you typed.
 
 <br clear="left">
 
+*[Version française](README.fr.md) — the code comments are in French.*
+
 ---
 
-Une CMDB de homelab se dégrade toujours de la même façon : on y saisit quelque
-chose d'utile, un script le réécrit au passage suivant, on ne s'en aperçoit pas,
-et on cesse d'y croire. TinyCMDB ne résout qu'un problème, mais entièrement :
-**savoir, champ par champ, qui est propriétaire de quoi** — et ne jamais laisser
-saisir dans un champ dont la disparition est programmée.
+A homelab CMDB always decays the same way: you type something useful into it, a
+script overwrites it on the next pass, you never notice, and you stop trusting
+it. TinyCMDB solves one problem, but completely: **knowing, field by field, who
+owns what** — and never letting you type into a field whose disappearance is
+already scheduled.
 
-Le reste en découle. Un collecteur qui ne touche qu'à ce qu'il possède. Une
-console qui n'ouvre à l'édition que ce qui survivra. Une base qui reflète ce qui
-est en place plutôt qu'un historique.
+Everything else follows. A collector that only touches what it owns. A console
+that only opens for editing what will survive. A database that reflects what is
+in place rather than a history of what used to be.
 
-### Ce que ça fait
+### What it does
 
-- **Découvre** les nœuds Proxmox (hyperviseurs, VM, LXC) et les conteneurs de
-  chaque hôte Docker, via un socket-proxy en lecture seule.
-- **Analyse** les images avec [Trivy](https://github.com/aquasecurity/trivy)
-  (CVE) et [Cup](https://github.com/sergi0g/cup) (mises à jour disponibles).
-- **Tient un IPAM** par VLAN, avec une grille d'occupation du /24 où une case
-  libre est un lien vers sa propre réservation.
-- **Relie le tout** : hyperviseur → invité → conteneur → image → CVE, et
-  l'application métier en travers — ce qui traduit « cette image porte 41
-  vulnérabilités critiques » en « ce service-là est concerné ».
-- **Supprime** ce qui a disparu, après un délai de grâce, et le montre venir.
+- **Discovers** Proxmox nodes (hypervisors, VMs, LXC containers) and the
+  containers on each Docker host, through a read-only socket proxy.
+- **Scans** images with [Trivy](https://github.com/aquasecurity/trivy) (CVEs)
+  and [Cup](https://github.com/sergi0g/cup) (available updates).
+- **Keeps an IPAM** per VLAN, with an occupancy grid of the /24 where a free
+  cell is a link to reserving that very address.
+- **Connects it all**: hypervisor → guest → container → image → CVE, with IP
+  addresses cutting across — which turns "this image carries 41 critical
+  vulnerabilities" into "*this* service is affected".
+- **Deletes** what has disappeared, after a grace period, and shows it coming.
 
-### Ce que ce n'est pas
+### What it isn't
 
-Ce n'est ni NetBox, ni GLPI, ni i-doit. Pas de gestion de parc, pas de tickets,
-pas de workflow d'approbation, pas de multi-tenant, pas d'historique. Le projet
-vise quelques centaines de lignes — un parc qu'une personne peut tenir dans sa
-tête — et ce plafond n'est pas une limite subie, c'est l'objectif : avoir ce
-qu'il faut et pas plus. Si l'inventaire devient lourd, c'est l'infrastructure
-qu'il faut regarder, pas le code.
+This is not NetBox, GLPI or i-doit. No asset lifecycle management, no ticketing,
+no approval workflow, no multi-tenancy, no history. The project targets a few
+hundred rows — an estate one person can hold in their head — and that ceiling is
+not a limitation to work around, it is the goal: have what you need and no more.
+If the inventory grows heavy, the thing to look at is the infrastructure, not
+the code.
 
-### Prérequis
+### Requirements
 
-- **[Baserow](https://baserow.io/)**, qui sert de stockage. TinyCMDB n'embarque
-  pas de base : il écrit dans six tables Baserow par API. Voir
-  [Modèle de données](#modèle-de-données) pour leur structure.
-- **Docker** et **Docker Compose**.
-- Au moins une source à inventorier : un cluster **Proxmox VE** et/ou des hôtes
-  **Docker** joignables par socket-proxy.
+- **[Baserow](https://baserow.io/)**, used as storage. TinyCMDB ships no
+  database of its own: it writes to six Baserow tables over the API. See
+  [Data model](#data-model) for their structure.
+- **Docker** and **Docker Compose**.
+- At least one thing to inventory: a **Proxmox VE** cluster and/or **Docker**
+  hosts reachable through a socket proxy.
 
-## Démarrage
+## Getting started
 
 ```bash
 cp .env.example .env
 chmod 600 .env
-# remplir .env : BASEROW_URL, BASEROW_TOKEN, TABLE_*, et PROXMOX_URL et/ou DOCKER_HOSTS
+# fill in .env: BASEROW_URL, BASEROW_TOKEN, TABLE_*, and PROXMOX_URL and/or DOCKER_HOSTS
 docker compose up -d --build
 docker compose logs -f collector
 ```
 
-La console est alors sur le port 8080 de l'IP déclarée dans `compose.yaml`
-(`192.168.10.11` est une valeur d'exemple, à remplacer par celle de votre hôte
-sur le VLAN d'administration — jamais `0.0.0.0` : cette console agrège tout
-l'inventaire).
+The console is then on port 8080 of the IP declared in `compose.yaml`
+(`192.168.10.11` is an example — replace it with your host's address on your
+management VLAN, and never use `0.0.0.0`: this console aggregates the entire
+inventory and has no business on your other segments).
 
-Le code est dans l'image. Pour développer sans reconstruire à chaque ligne, le
-remonter par-dessus :
+The code lives inside the image. To develop without rebuilding on every line,
+mount it over the top:
 
 ```bash
 cp compose.override.yaml.example compose.override.yaml
-docker compose up -d          # ./app est désormais monté en lecture seule
-docker compose restart web    # après une modification
+docker compose up -d          # ./app is now mounted read-only
+docker compose restart web    # after a change
 ```
 
-Cette surcharge est ignorée par git et n'a rien à faire sur une machine de
-production : l'intérêt d'une image est que ce qui tourne soit exactement ce qui a
-été construit.
+That override is git-ignored and has no place on a production host: the point of
+an image is that what runs is exactly what was built.
 
-Pour tester en une seule passe sans attendre la boucle : `RUN_ONCE=true` dans
-`.env`, puis `docker compose run --rm collector` (ou lancer `python -m collector.main`
-directement dans un venv local, cf. section Tests locaux).
-
-## Tests locaux (sans Docker)
+## Local development (without Docker)
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export $(grep -v '^#' .env | xargs)  # ou source un fichier séparé
+export $(grep -v '^#' .env | xargs)  # or source a separate file
 cd app && python -m collector.main
 ```
 
-La console web se lance depuis le même dossier `app/` :
+The web console starts from the same `app/` directory:
 
 ```bash
 cd app && uvicorn web.main:app --host 0.0.0.0 --port 8099 --reload
 ```
 
-Les binaires `cup` et `trivy` ne sont installés que dans l'image. Pour les tester
-hors Docker, les extraire de leurs images officielles vers le venv :
+The `cup` and `trivy` binaries only exist inside the image. To test them outside
+Docker, extract them from their official images into the venv:
 
 ```bash
 id=$(docker create ghcr.io/sergi0g/cup) && docker cp "$id:/cup" .venv/bin/cup && docker rm "$id"
 id=$(docker create aquasec/trivy) && docker cp "$id:/usr/local/bin/trivy" .venv/bin/trivy && docker rm "$id"
 ```
 
-## Prérequis Proxmox
+## Proxmox setup
 
-Le token API **doit** être créé avec `--privsep 0`. C'est le piège le plus
-fréquent sur ce sujet : avec la séparation de privilèges activée, le token
-n'hérite d'aucun droit, et l'API renvoie une liste vide **sans erreur explicite**
-— rien ne plante, l'inventaire est juste vide. Le collecteur logge un
-avertissement explicite dans ce cas précis (voir `sources/proxmox.py`), mais
-mieux vaut le savoir avant :
+The API token **must** be created with `--privsep 0`. This is the most common
+trap on the subject: with privilege separation enabled, the token inherits no
+permissions at all and the API returns an empty list **with no explicit error** —
+nothing crashes, the inventory is simply empty. The collector logs a specific
+warning for this case (see `sources/proxmox.py`), but it is better known in
+advance:
 
 ```bash
-pveum user add cmdb@pve --comment "Collecteur CMDB"
+pveum user add cmdb@pve --comment "TinyCMDB collector"
 pveum acl modify / --users cmdb@pve --roles PVEAuditor
 pveum user token add cmdb@pve collector --privsep 0
 ```
 
-## Prérequis Docker : socket-proxy
+## Docker setup: socket proxy
 
-Le collecteur ne parle jamais au socket Docker en TCP brut (équivalent root).
-Déployer `socket-proxy.compose.yaml` sur **chaque** hôte Docker à inventorier
-(généralement une VM Proxmox) :
+The collector never talks to the Docker socket over raw TCP — that is equivalent
+to root. Deploy `socket-proxy.compose.yaml` on **every** Docker host you want
+inventoried (usually a Proxmox VM):
 
 ```bash
 docker compose -f socket-proxy.compose.yaml up -d
 ```
 
-Points d'attention dans ce fichier :
-- Port bindé sur l'IP du VLAN management, jamais `0.0.0.0` — Docker manipule
-  iptables directement et contourne les règles ufw de l'hôte.
-- `POST=0`, `read_only: true`, socket monté `:ro` : lecture seule stricte.
-- `CONTAINERS=1` et `IMAGES=1` seulement : rien d'autre n'est exposé.
+What matters in that file:
 
-Dans `DOCKER_HOSTS`, le nom donné à chaque hôte **doit correspondre exactement**
-à son `Node.name` tel que découvert par Proxmox. Une différence d'orthographe
-(casse, tiret, etc.) laisse `Container.host` vide sans erreur — c'est le premier
-problème que rencontrera l'utilisateur. Le collecteur détecte ce cas et logge un
-avertissement listant les noms non résolus à chaque passe.
+- The port is bound to the management VLAN IP, never `0.0.0.0` — Docker
+  manipulates iptables directly and bypasses the host's ufw rules.
+- `POST=0`, `read_only: true`, socket mounted `:ro`: strictly read-only.
+- `CONTAINERS=1` and `IMAGES=1` only; nothing else is exposed.
 
-### Découverte automatique des hôtes Docker
+In `DOCKER_HOSTS`, the name given to each host **must match exactly** its
+`Node.name` as discovered by Proxmox. Any spelling difference (case, hyphen,
+etc.) leaves `Container.host` empty with no error — this is the first problem
+most people hit. The collector detects the case and logs a warning listing the
+unresolved names on every pass.
 
-Plutôt que de maintenir `DOCKER_HOSTS` à la main pour chaque VM Docker, taguer le
-`Node` correspondant avec le rôle `docker` directement dans Baserow. À la passe
-suivante, le collecteur le détecte et construit l'URL de son socket-proxy par
-convention : `http://{Node.name}{DNS_SUFFIX}:{DOCKER_SOCKET_PROXY_PORT}`.
+### Automatic Docker host discovery
 
-C'est cohérent avec la propriété du champ `roles` : Proxmox n'écrit jamais que
-l'option `hypervisor` (et seulement sur les nœuds physiques) — `docker` est un tag
-manuel, exactement comme `database` ou `network`. Le collecteur fusionne toujours
-`roles` avec l'existant plutôt que de l'écraser, pour ne jamais effacer ce genre de
-tag manuel posé sur un Node par ailleurs auto-découvert par Proxmox.
+Rather than maintaining `DOCKER_HOSTS` by hand for every Docker VM, tag the
+corresponding `Node` with the `docker` role directly in Baserow. On the next
+pass the collector picks it up and builds the socket-proxy URL by convention:
+`http://{Node.name}{DNS_SUFFIX}:{DOCKER_SOCKET_PROXY_PORT}`.
 
-`DOCKER_HOSTS` reste utile dans deux cas : un hôte Docker qui n'a pas de `Node`
-Proxmox (bare-metal, hors périmètre Proxmox), ou pour surcharger l'URL reconstruite
-par convention si elle ne convient pas pour un hôte donné.
+This is consistent with who owns the `roles` field: Proxmox only ever writes the
+`hypervisor` option, and only on physical nodes — `docker` is a manual tag, just
+like `database` or `network`. The collector always merges `roles` with what is
+already there rather than overwriting, so it never erases a manual tag placed on
+an otherwise auto-discovered node.
 
-## Modèle de données
+`DOCKER_HOSTS` remains useful in two cases: a Docker host with no Proxmox `Node`
+(bare metal, outside the Proxmox scope), or to override the URL built by
+convention when it does not suit a given host.
 
-Six tables à créer dans Baserow. TinyCMDB ne crée jamais de champ et n'en
-renomme aucun : il les lit par leur nom (`user_field_names`), et **un champ
-renommé revient vide sans erreur** — c'est le piège le plus coûteux de ce
-montage. Les identifiants des tables se déclarent dans `.env` (`TABLE_*`).
+## Data model
 
-La **clé naturelle** est ce sur quoi le collecteur réconcilie : jamais l'id
-interne de Baserow, qui ne veut rien dire hors de Baserow.
+Six tables to create in Baserow. TinyCMDB never creates a field and never
+renames one: it reads them by name (`user_field_names`), and **a renamed field
+comes back empty with no error** — the costliest trap in this design. Table IDs
+are declared in `.env` (`TABLE_*`).
 
-| Table | Clé naturelle | Écrite par |
+The **natural key** is what the collector reconciles on — never Baserow's
+internal row id, which means nothing outside Baserow.
+
+| Table | Natural key | Written by |
 |---|---|---|
-| `Node` | `Name` | Proxmox — sauf les lignes `Source = Manual` |
-| `Container` | `UID` (`{hôte}/{nom}`) | Docker, intégralement |
+| `Node` | `Name` | Proxmox — except rows with `Source = Manual` |
+| `Container` | `UID` (`{host}/{name}`) | Docker, entirely |
 | `Images` | `Reference` | Docker, Trivy, Cup |
-| `IPAM` | `Address` | Proxmox, Docker — enrichissement des lignes manuelles |
-| `VLAN` | `name` | personne : référentiel, saisi à la main |
-| `Application` | `Name` | personne : regroupement métier, saisi à la main |
+| `IPAM` | `Address` | Proxmox, Docker — manual rows are enriched, not overwritten |
+| `VLAN` | `name` | nobody: a reference table, filled in by hand |
+| `Application` | `Name` | nobody: a business grouping, filled in by hand |
 
-Les champs attendus, table par table :
+Expected fields, table by table:
 
-- **Node** — `Name`, `Type` (liste : Physical, VM, LXC, Appliance, Device,
-  Camera, IoT), `Parent_host` (lien → Node), `vmid`, `Status` (liste), `OS`,
-  `vCPU`, `RAM_Gb`, `Disk_Gb`, `Backup` (booléen), `Guest_agent` (booléen),
-  `Source` (liste : Auto, Manual), `Last_seen` (date), `Container` (lien →
-  Container), `IPAM` (lien → IPAM), `Roles` (liste multiple), `Criticality`
-  (liste), `Application` (lien → Application), `notes`.
-- **Container** — `UID`, `Name`, `Host` (lien → Node), `Image` (lien → Images),
-  `Service`, `Status` (liste), `Ports`, `Restart_policy` (liste), `Stack`,
-  `Compose_path`, `Type` (liste), `Last_seen` (date), `Application - Stack`
-  (lien → Application), `Notes`.
+- **Node** — `Name`, `Type` (single select: Physical, VM, LXC, Appliance,
+  Device, Camera, IoT), `Parent_host` (link → Node), `vmid`, `Status` (select),
+  `OS`, `vCPU`, `RAM_Gb`, `Disk_Gb`, `Backup` (boolean), `Guest_agent`
+  (boolean), `Source` (select: Auto, Manual), `Last_seen` (date), `Container`
+  (link → Container), `IPAM` (link → IPAM), `Roles` (multiple select),
+  `Criticality` (select), `Application` (link → Application), `notes`.
+- **Container** — `UID`, `Name`, `Host` (link → Node), `Image` (link → Images),
+  `Service`, `Status` (select), `Ports`, `Restart_policy` (select), `Stack`,
+  `Compose_path`, `Type` (select), `Last_seen` (date), `Application - Stack`
+  (link → Application), `Notes`.
 - **Images** — `Reference`, `Registry`, `Repository`, `Tag`, `Digest_local`,
-  `Available_version`, `Update_available` (booléen), `CVE_critical`, `CVE_high`,
-  `Last_scan`, `Last_seen` (date), `Container` (lien → Container), `Notes`.
-- **IPAM** — `Address`, `IP_int` (nombre), `VLAN` (lien → VLAN), `Type` (liste),
-  `Node` (lien → Node), `FQDN`, `Hostname`, `MAC`, `Vendor`, `Status` (liste),
-  `Source` (liste : Auto, Manual), `Last_seen` (date), `Notes`.
-- **VLAN** — `name`, `vlan_id`, `subnet` (CIDR), `gateway`, `zone` (liste),
-  `dhcp` (booléen), `dhcp_range`, `dns`, `notes`.
-- **Application** — `Name`, `Status` (liste), `Criticality` (liste),
-  `Capability` (liste multiple), `URL`, `URL 2`, `Doc`, `Notes`.
+  `Available_version`, `Update_available` (boolean), `CVE_critical`, `CVE_high`,
+  `Last_scan`, `Last_seen` (date), `Container` (link → Container), `Notes`.
+- **IPAM** — `Address`, `IP_int` (number), `VLAN` (link → VLAN), `Type`
+  (select), `Node` (link → Node), `FQDN`, `Hostname`, `MAC`, `Vendor`, `Status`
+  (select), `Source` (select: Auto, Manual), `Last_seen` (date), `Notes`.
+- **VLAN** — `name`, `vlan_id`, `subnet` (CIDR), `gateway`, `zone` (select),
+  `dhcp` (boolean), `dhcp_range`, `dns`, `notes`.
+- **Application** — `Name`, `Status` (select), `Criticality` (select),
+  `Capability` (multiple select), `URL`, `URL 2`, `Doc`, `Notes`.
 
-Les valeurs des listes déroulantes sont libres : la console propose celles
-employées dans la base, et n'en invente aucune. Les seules dont le collecteur
-dépend sont `Source = Auto | Manual` et `Node.Type` pour distinguer un invité
-(`VM`, `LXC`) d'une machine réelle.
+Select option values are yours to choose: the console offers the ones already
+used in the base and invents none. The only ones the collector depends on are
+`Source = Auto | Manual`, and `Node.Type` to tell a guest (`VM`, `LXC`) from a
+real machine.
 
-**`app/web/schema.py` est la source de vérité** sur la propriété de chaque
-champ. Toute évolution du collecteur qui change ce qu'il écrit doit s'y
-refléter, sinon la console ment — ce qui serait pire que de ne rien afficher.
+**`app/web/schema.py` is the source of truth** on who owns each field. Any
+change to the collector that alters what it writes must be reflected there, or
+the console lies — which would be worse than showing nothing at all.
 
-## Règles de réconciliation
+## Reconciliation rules
 
-Ce sont les règles qui font qu'il s'agit d'une CMDB et pas d'un simple
-inventaire. Elles sont implémentées une seule fois, dans `baserow.py` — aucune
-source n'a le droit d'y déroger.
+These are the rules that make this a CMDB rather than a dump. They are
+implemented once, in `baserow.py`, and no source is allowed to deviate.
 
-1. **Upsert par clé naturelle**, jamais par id Baserow interne :
-   `Node.Name`, `Container.UID` (`{host}/{nom}`), `Images.Reference`,
-   `IPAM.Address`. `Application` n'a pas de clé gérée par le collecteur : voir
-   plus bas, il n'y touche pas.
-2. **Ordre d'écriture imposé** : Node → Images → Container (un `link_row` a
-   besoin que sa cible soit déjà en cache). Dans la passe Proxmox, les
-   hyperviseurs sont écrits avant les invités.
-3. **Chaque source n'écrit que les champs dont elle est propriétaire.** Un champ
-   absent du payload reste intact côté Baserow. Le collecteur ne met jamais `""`
-   ou `null` pour un champ *inconnu* à ce passage — en revanche il écrit
-   explicitement une valeur vide (ex. `Stack: ""`) quand la source *sait*
-   positivement que le champ est vide (un conteneur `docker run` sans compose,
-   donc hors reproductibilité — voir la section `Application` plus bas).
-4. **Les lignes `Source = Manual` sont protégées** (`Node` et `IPAM`, les deux
-   tables qui portent ce champ) : seul `Last_seen` y est mis à jour, quels
-   que soient les champs que la source pense posséder. `Source` passe à `Auto` à
-   la création et n'est plus jamais réécrit. `Container`/`Images` n'ont pas ce
-   champ : rien n'y est jamais manuel par construction (faits Docker purs).
-   `Application` n'a pas non plus ce champ, pour une autre raison : le
-   collecteur n'y écrit jamais rien du tout.
-5. **`Last_seen` est posé à chaque passage**, même sans changement : c'est ce
-   qui permet de repérer ce qui a disparu.
-6. **Suppression réelle après le délai de grâce.** Choix explicite qui revient sur
-   la version d'origine de ce prompt ("ne jamais supprimer") : la CMDB doit
-   refléter ce qui est *actuellement* en place, pas un historique. Ce qui n'est
-   plus vu depuis plus de `RETIRE_GRACE_HOURS` (défaut 72h) est supprimé pour de
-   bon — sauf les lignes `Source = Manual`, protégées indéfiniment. Le délai de
-   grâce est le seul filet contre un aléa ponctuel (pass qui rate, hôte HS
-   quelques minutes) ; passé ce délai, l'absence est traitée comme une vraie
-   disparition, y compris si la cause est une panne prolongée d'un hôte Proxmox
-   ou Docker — assumé, voir `baserow.py:delete_missing`.
-7. **Une source en échec n'arrête pas les autres** : chaque erreur réseau est
-   capturée, loggée avec contexte, et le collecteur continue. Ça ne bloque plus
-   non plus la suppression : les lignes que cette source aurait dû confirmer ce
-   passage vieillissent normalement vers le délai de grâce.
+1. **Upsert by natural key**, never by Baserow's internal id: `Node.Name`,
+   `Container.UID` (`{host}/{name}`), `Images.Reference`, `IPAM.Address`.
+   `Application` has no collector-managed key — see below, the collector never
+   touches it.
+2. **Write order is fixed**: Node → Images → Container (a `link_row` needs its
+   target to already be in cache). Within the Proxmox pass, hypervisors are
+   written before their guests.
+3. **Each source only writes the fields it owns.** A field absent from the
+   payload stays untouched in Baserow. The collector never sends `""` or `null`
+   for a field it simply doesn't know about on this pass — but it does write an
+   explicitly empty value (e.g. `Stack: ""`) when the source *positively knows*
+   the field is empty (a `docker run` container with no compose project, hence
+   outside reproducibility).
+4. **Rows with `Source = Manual` are protected** (`Node` and `IPAM`, the two
+   tables carrying that field): only `Last_seen` is updated there, whatever
+   fields the source believes it owns. `Source` is set to `Auto` on creation and
+   never rewritten afterwards. `Container` and `Images` have no such field —
+   nothing in them is ever manual by construction, they are pure Docker facts.
+   `Application` has none either, for a different reason: the collector never
+   writes anything to it at all.
+5. **`Last_seen` is set on every pass**, even when nothing changed: that is what
+   makes it possible to spot what has gone.
+6. **Real deletion after the grace period.** A deliberate choice: the CMDB must
+   reflect what is *currently* in place, not a history. Anything not seen for
+   more than `RETIRE_GRACE_HOURS` (default 72h) is deleted for good — except
+   `Source = Manual` rows, protected indefinitely. The grace period is the only
+   safety net against a transient failure (a missed pass, a host down for a few
+   minutes); past that delay, absence is treated as a real disappearance, even
+   when the cause is a prolonged Proxmox or Docker outage. Accepted, see
+   `baserow.py:delete_missing`.
+7. **A failing source does not stop the others**: every network error is caught,
+   logged with context, and the collector carries on. It no longer blocks
+   deletion either: rows that source should have confirmed simply age normally
+   toward the grace period.
 
-## `Application` : 100% manuelle
+## `Application`: 100% manual
 
-Le collecteur n'écrit jamais dans `Application` et n'y crée jamais de ligne. Ce
-n'est pas un oubli : un projet Docker Compose n'est **pas** la même chose qu'une
-Application au sens métier (un regroupement logique d'assets, qui peut mélanger
-plusieurs stacks, une VM sans Docker, etc.) — les confondre a causé plus de
-confusion que d'aide.
+The collector never writes to `Application` and never creates a row in it. This
+is not an oversight: a Docker Compose project is **not** the same thing as an
+application in the business sense — a logical grouping of assets that may span
+several stacks, a VM without Docker, and so on. Conflating the two caused more
+confusion than it saved.
 
-Le fait technique "ce conteneur appartient à tel projet Compose" vit sur
-`Container.Stack` (texte, écrit par Docker à chaque passage, exactement comme
-`Container.Host`) — jamais interprété, jamais transformé en regroupement. Une
-vue Baserow filtrée/groupée sur `Stack` donne déjà l'équivalent de l'ancien
-comportement auto pour le cas simple (1 stack = 1 conteneur logique).
+The technical fact "this container belongs to that Compose project" lives on
+`Container.Stack` (text, written by the Docker pass on every run, exactly like
+`Container.Host`) — never interpreted, never turned into a grouping. A Baserow
+view filtered or grouped on `Stack` already gives you the equivalent of the old
+automatic behaviour for the simple case (1 stack = 1 logical container).
 
-Pour créer une vraie Application (le cas où plusieurs stacks/VMs représentent un
-seul produit pour toi) : créer la ligne à la main, puis lier manuellement les
-`Container` (et/ou le `Node` via `Application.Host`, pour une app hors Docker)
-qui la composent. Aucune limite au nombre de stacks derrière une Application.
+To create a real application — the case where several stacks or VMs represent
+one product to you — create the row by hand, then link the `Container` rows
+(and/or the `Node` through `Application`, for a non-Docker app) that make it up.
+There is no limit to the number of stacks behind one application.
 
-## Console web
+## Web console
 
-Service de consultation au-dessus des mêmes tables (`app/web/`), servi par le
-service `web` de `compose.yaml`. Même image que le collecteur, commande
-différente : une seule construction, et le code reste monté en lecture seule —
-`docker compose restart web` suffit après une modification.
+A console over the same tables (`app/web/`), served by the `web` service in
+`compose.yaml`. Same image as the collector, different command: one build, one
+set of dependencies, and no way for the two to drift apart.
 
 ```bash
-# .env : ajouter TABLE_APPLICATION (la console la lit, le collecteur non)
-#        et de préférence WEB_BASEROW_TOKEN : read partout, update là où il y a des
-#        champs manuels, create sur Ipam + Application seulement, delete nulle part
+# .env: add TABLE_APPLICATION (the console reads it, the collector doesn't)
+#       and ideally WEB_BASEROW_TOKEN — read everywhere, update where manual
+#       fields exist, create on Ipam + Application only, delete nowhere
 docker compose up -d web
 ```
 
-Adapter l'IP publiée dans `compose.yaml` (`192.168.10.11:8080:8080`) à celle de
-l'hôte sur le VLAN management. Jamais `0.0.0.0` : cette console agrège tout
-l'inventaire, elle n'a rien à faire sur les autres segments.
+**Why a service and not a static page.** A Baserow *database token* can be
+restricted neither by origin nor by row: exposed in a browser, it grants access
+to the whole database, not just the screen on display. So the token lives
+server-side and never leaves it.
 
-**Pourquoi un service et pas une page statique.** Un *database token* Baserow ne
-se restreint ni par origine ni par ligne : exposé dans un navigateur, il donne
-accès à toute la base, pas au seul écran affiché. Le token vit donc côté serveur
-et n'en sort jamais.
+**Editing (`app/web/ecriture.py`).** The console lets you correct the fields the
+collector never rewrites, and only those. The list is enforced server-side, not
+in the templates, and its filter is `schema.editable()` — the same function that
+decides the "manual" marker shown in read mode: the two screens cannot
+contradict each other. A node discovered on Proxmox therefore exposes four
+editable fields, while a hand-entered camera exposes eleven, without a single
+rule being written twice.
 
-**Modification (`app/web/ecriture.py`).** La console permet de corriger les
-champs que le collecteur ne réécrit jamais, et eux seuls. La liste est appliquée
-côté serveur, pas dans les gabarits, et son filtre est `schema.editable()` — la
-même fonction qui décide de la mention « manuel » affichée en consultation : les
-deux écrans ne peuvent pas se contredire. Un nœud découvert sur Proxmox expose
-ainsi quatre champs, une caméra saisie à la main en expose onze, sans qu'aucune
-règle ne soit écrite deux fois.
+**Creation.** Two tables accept it: Ipam — an undocumented cell in a VLAN's grid
+is a link to reserving that address — and Application. The form offered is made
+of the fields that will be *manual on the row about to be created*: for IPAM,
+`schema.editable()` queried with `Source = Manual` returns Address, MAC, Node,
+Type, Status and Notes, and leaves out the VLAN, the vendor and the DNS name
+that the collector will compute. The console sets `Source = Manual` itself —
+without it, the collector would delete the address as soon as it noticed nothing
+answering there — and pre-computes VLAN and IP_int, which the collector will
+recompute identically, so the row is usable immediately rather than on the next
+pass.
 
-**Création.** Deux tables l'acceptent : Ipam — une case non documentée de la
-grille d'un VLAN est un lien vers la réservation de cette adresse — et
-Application. Le formulaire proposé est celui des champs qui seront *manuels sur
-la ligne créée* : sur l'IPAM, `schema.editable()` interrogé avec `Source =
-Manual` rend Address, MAC, Node, Type, Status et Notes, et écarte le VLAN, le
-constructeur et le nom DNS que le collecteur recalculera. La console impose
-elle-même `Source = Manual` — sans quoi le collecteur supprimerait l'adresse dès
-qu'il constaterait ne pas la voir — et pré-calcule VLAN et IP_int, que le
-collecteur recalculera à l'identique, pour que la ligne soit utilisable tout de
-suite plutôt qu'au prochain passage.
+That module is the only one in the web service that writes; everything else
+knows nothing but `fetch_all`. It deletes nowhere and creates nowhere else,
+hence the token rights above. Should Baserow ever need replacing, that is the
+file to rewrite — and the only one.
 
-Ce module est le seul du service web à écrire ; tout le reste ne connaît que
-`fetch_all`. Il ne supprime nulle part et ne crée nulle part ailleurs, d'où les
-droits de token ci-dessus. Si Baserow devait un jour être remplacé, c'est ce
-fichier qu'il faudrait réécrire, et lui seul.
+What remains Baserow's job, by design: deleting a row, adding a field, creating
+a select option, creating a row in the four other tables. The options offered in
+the forms are those already used in the base — the API does not expose a
+`single_select`'s definition to a database token.
 
-Ce qui reste du ressort de Baserow, par construction : supprimer une ligne,
-ajouter un champ, créer une option de liste, créer une ligne dans les quatre
-autres tables. Les options proposées dans les formulaires sont celles déjà
-employées dans la base — l'API ne donne pas la définition d'un `single_select` à
-un *database token*.
+**What it shows that Baserow cannot:**
 
-**Ce qu'elle montre que Baserow ne peut pas montrer :**
+- **The provenance of every field** (`app/web/schema.py`). Baserow displays a
+  node's 19 fields as if they were all yours; in reality the collector rewrites
+  most of them on every pass. Every field on every record is marked `auto`
+  (overwritten on the next pass), `enrichi` (recomputed even on a manual row —
+  the case for the VLAN, vendor and hostname of a hand-entered IP address) or
+  `manuel`.
+- **The graph**, which Baserow can only ever show one table at a time:
+  hypervisor → guest → container → image → CVE, with IP addresses cutting
+  across. All six tables are pulled at once and recomposed in memory
+  (`app/web/store.py`), which is possible only because the estate fits in a few
+  hundred rows.
+- **Work queues**: what carries critical CVEs, what is behind on versions, what
+  runs outside any `docker compose`, what is attached to no application, what
+  has no known IP.
+- **Stacks** (`/stacks`), reconstructed from `Container.Stack` — the collector
+  reports the Compose project name on each container, the grouping happens in
+  the console. A stack carries its host, its containers, its images, its CVE
+  total and its deployment path. It is also what distinguishes three identically
+  named containers (`docker-socket-proxy`) deployed on three hosts, and the unit
+  of reproducibility for the infrastructure: what is not in a stack cannot be
+  redeployed identically.
+- **Rows on borrowed time** (`/etat`): what the collector no longer sees and
+  will actually delete, with the remaining delay. A row appears there when it is
+  late *relative to the other rows in its table*, not when it is merely old — if
+  the collector is stopped, everything is old and nothing is at risk.
 
-- **La provenance de chaque champ** (`app/web/schema.py`). Baserow affiche les 19
-  champs d'un nœud comme s'ils étaient tous à toi ; en réalité le collecteur en
-  réécrit la majorité à chaque passage. Chaque champ de chaque fiche est marqué
-  `auto` (écrasé au prochain passage), `enrichi` (recalculé même sur une ligne
-  manuelle — c'est le cas du VLAN, du constructeur et du hostname d'une adresse
-  IP saisie à la main) ou `manuel`. **Ce module est la seule source de vérité sur
-  le sujet : toute évolution du collecteur qui change ce qu'il écrit doit s'y
-  refléter, sinon la console ment.**
-- **Le graphe**, que Baserow ne sait afficher qu'une table à la fois : hyperviseur
-  → invité → conteneur → image → CVE, et l'IP en travers. Les six tables sont
-  tirées d'un coup et recomposées en mémoire (`app/web/store.py`), ce qui est
-  possible parce que le parc tient en quelques centaines de lignes.
-- **Les files d'attente** : ce qui porte des CVE critiques, ce qui est en retard
-  de version, ce qui tourne hors de tout `docker compose`, ce qui n'est rattaché
-  à aucune application, ce qui n'a pas d'IP connue.
-- **Les stacks** (`/stacks`), reconstituées à partir de `Container.Stack` — le
-  collecteur rapporte le nom du projet Compose sur chaque conteneur, le
-  regroupement se fait côté console. Une stack porte l'hôte, ses conteneurs, ses
-  images, son cumul de CVE et son chemin de déploiement. C'est aussi ce qui
-  distingue trois conteneurs homonymes (`docker-socket-proxy`) déployés sur trois
-  hôtes, et l'unité de reproductibilité de l'infrastructure : ce qui n'est pas
-  dans une stack ne se redéploie pas à l'identique.
-- **Les lignes en sursis** (`/etat`) : ce que le collecteur ne revoit plus et qui
-  sera réellement supprimé, avec le délai restant. Une ligne y apparaît quand elle
-  est en retard *sur les autres lignes de sa table*, pas quand elle est simplement
-  ancienne : si le collecteur est à l'arrêt, tout est ancien et rien n'est menacé.
+**Interface.** Light, dark or system theme (remembered per browser), responsive
+down to a phone (collapsible menu, records laid out two lines per field, wide
+tables scrolling inside their own frame rather than dragging the page sideways).
+Explanations are not permanently on screen: each panel carries a help button
+that unfolds the detail on click.
 
-**Interface.** Thème clair, sombre ou suivi du système (mémorisé par
-navigateur), mise en page responsive jusqu'au téléphone (menu repliable, fiches
-sur deux lignes par champ, tableaux larges qui défilent dans leur cadre plutôt
-que d'emporter la page). Les explications ne sont pas affichées en permanence :
-chaque cadre porte un bouton d'aide qui déplie le détail au clic.
+**The Infrastructure screen separates virtual from physical**, and the physical
+estate is grouped **by type** — servers, network appliances, workstations,
+cameras, IoT — with each device appearing in exactly one group. Grouping by role
+was tried and reverted: it scattered physical servers across as many categories
+as they had functions. Roles remain shown as tags on each row, and search finds
+a device by its role.
 
-**L'écran Infrastructure sépare virtuel et physique**, et le parc physique est
-groupé **par rôle, pas par type** : un Raspberry Pi qui sert de DNS doit
-apparaître avec les switchs quand on regarde « Network ». Un équipement figure
-donc dans autant de catégories qu'il porte de rôles — une catégorie montre tout
-ce qui la sert. Le type reste affiché sur chaque ligne.
-
-**Icônes d'application.** `<origine>/favicon.ico` ne trouve qu'une minorité des
-icônes ; la console lit donc le HTML des URL de la table Application pour y
-trouver la balise `<link rel="icon">` (voir `app/web/favicons.py`). C'est la seule
-entorse au principe « ce service ne parle qu'à Baserow » : seul le HTML est lu,
-l'image reste chargée par le navigateur. Désactivable par
+**Application icons.** `<origin>/favicon.ico` finds only a minority of icons, so
+the console reads the HTML of the URLs in the Application table looking for the
+`<link rel="icon">` tag (see `app/web/favicons.py`). This is the only breach of
+the "this service only talks to Baserow" principle: only the HTML is read, the
+image itself is always loaded by the browser. Disable with
 `WEB_FAVICON_DISCOVERY=false`.
 
-Le navigateur reprend ensuite la main : si le candidat retenu échoue, il essaie
-les emplacements conventionnels l'un après l'autre avant de retomber sur
-l'initiale. Ce n'est pas qu'un repli — **le poste qui affiche la page a des
-droits que ce service n'a pas**. Un reverse proxy filtrant par IP source répond
-403 à la console et sert la vraie page au navigateur : la découverte échoue,
-l'icône s'affiche quand même.
+The browser then takes over: if the chosen candidate fails, it tries the
+conventional locations one after another before falling back to the initial.
+This is not merely a fallback — **the machine displaying the page has access
+rights this service does not**. A reverse proxy filtering on source IP answers
+403 to the console and serves the real page to the browser: discovery fails, the
+icon shows up anyway.
 
-En lecture seule pour l'instant. L'édition des champs manuels viendra avec une
-liste blanche appliquée côté serveur, jamais seulement dans l'interface.
+## Adding a source
 
-## Ajouter une source
-
-Un fichier dans `app/collector/sources/`, qui expose une fonction `collect(...)`
-renvoyant des dicts normalisés — **aucun appel à Baserow dedans**. Puis une passe
-dans `main.py` qui appelle `client.upsert(...)` avec les champs que renvoie la
-source. Cup (`sources/cup.py`) et Trivy (`sources/trivy.py`) suivent ce modèle et
-alimentent `Images` : `Available_version` / `Update_available` pour le premier,
-`CVE_critical` / `CVE_high` / `Last_scan` pour le second. Tous deux tournent en
-sous-processus (binaire embarqué dans l'image), sans serveur ni socket Docker
-supplémentaire.
+One file in `app/collector/sources/`, exposing a `collect(...)` function that
+returns normalised dicts — **with no call to Baserow inside**. Then a pass in
+`main.py` that calls `client.upsert(...)` with the fields the source returns.
+Cup (`sources/cup.py`) and Trivy (`sources/trivy.py`) follow this pattern and
+both feed `Images`: `Available_version` / `Update_available` for the first,
+`CVE_critical` / `CVE_high` / `Last_scan` for the second. Both run as
+subprocesses (binaries baked into the image), with no extra server and no extra
+Docker socket.
 
 ## Configuration (`.env`)
 
-Voir `.env.example` pour la liste complète. Deux points notables :
+See `.env.example` for the full list. Two things worth calling out:
 
-- **Baserow** : utiliser un *database token* (`Authorization: Token <t>`), jamais
-  le JWT admin — celui-ci permet de modifier la structure des tables et n'a
-  rien à faire dans un process qui tourne toutes les 15 minutes. Droits
-  create/read/update **et delete** (nécessaire depuis que la suppression réelle
-  est activée — voir règle 6 ci-dessous) ; le JWT admin, lui, reste hors sujet.
-- **TLS interne** : `BASEROW_VERIFY_TLS=false` fonctionne pour un certificat
-  auto-signé sur domaine `.lcl`. Alternative propre si une CA interne existe :
-  positionner `REQUESTS_CA_BUNDLE` sur le chemin de cette CA plutôt que de
-  désactiver la vérification.
+- **Baserow**: use a *database token* (`Authorization: Token <t>`), never the
+  admin JWT — that one can alter the structure of your tables and has no
+  business in a process running every 15 minutes. The collector's token needs
+  create/read/update **and delete** (required since real deletion was enabled,
+  see rule 6). The console's token (`WEB_BASEROW_TOKEN`) needs much less: read
+  everywhere, update where manual fields exist, create on Ipam and Application
+  only, delete nowhere.
+- **Internal TLS**: `BASEROW_VERIFY_TLS=false` works for a self-signed
+  certificate on a `.lcl` domain. The cleaner alternative, if you run an
+  internal CA: point `REQUESTS_CA_BUNDLE` at that CA rather than disabling
+  verification.
 
-## Ce que ce collecteur ne fait pas
+## What this collector does not do
 
-- Ne modifie jamais le schéma Baserow (pas de création/suppression de champ ou
-  de table) — un champ référencé par le code (`Guest_agent`, `Last_seen` sur
-  `Images`...) doit être ajouté à la main avant que le code correspondant
-  fonctionne ; sinon Baserow l'ignore silencieusement, sans erreur.
-- Ne supprime **jamais** une ligne `Source = Manual` — en dehors de ça, il
-  supprime pour de bon ce qu'il ne voit plus (règle 6). Ce n'est *pas* un
-  historique : voir la section Règles de réconciliation.
-- Ne parle jamais au socket Docker en direct.
-- N'a pas de state sur disque : à chaque démarrage, les caches sont reconstruits
-  depuis Baserow.
+- It never modifies the Baserow schema (no field or table creation or deletion)
+  — a field referenced by the code (`Guest_agent`, `Last_seen` on `Images`…)
+  must be added by hand before the corresponding code works; otherwise Baserow
+  ignores it silently, with no error.
+- It **never** deletes a `Source = Manual` row. Outside of that, it does delete
+  for good what it no longer sees (rule 6). This is *not* a history: see
+  Reconciliation rules.
+- It never talks to the Docker socket directly.
+- It keeps no state on disk: on every start, caches are rebuilt from Baserow.
 
-## Licence
+## License
 
-MIT — voir [LICENSE](LICENSE). Faites-en ce que vous voulez ; si vous
-l'adaptez à un autre hyperviseur ou à un autre stockage, le retour d'expérience
-m'intéresse.
+MIT — see [LICENSE](LICENSE). Do what you like with it. If you adapt it to
+another hypervisor or another storage backend, I would be glad to hear how it
+went.
