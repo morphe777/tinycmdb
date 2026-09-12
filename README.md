@@ -22,13 +22,7 @@ Everything else follows. A collector that only touches what it owns. A console
 that only opens for editing what will survive. A database that reflects what is
 in place rather than a history of what used to be.
 
-<p align="center">
-  <img src="docs/screenshot-dashboard.png" alt="Dashboard — work queues, sorted by what costs the most if ignored" width="92%">
-</p>
-<p align="center">
-  <img src="docs/screenshot-ipam.png" alt="IPAM — /24 occupancy grid, one cell per address" width="46%">
-  <img src="docs/screenshot-record.png" alt="A node record, with the provenance of every field" width="46%">
-</p>
+![The dashboard: work queues ordered by what costs the most if ignored](docs/screenshot-dashboard.png)
 
 ### What it does
 
@@ -178,6 +172,8 @@ the last one: which applications are affected. An image with critical CVEs and
 no application attached is a vulnerability whose business impact cannot be
 established — which is a finding in itself.
 
+![The Security screen: images by severity, with available versions and affected applications](docs/screenshot-security.png)
+
 **Read the infrastructure.** *Infrastructure* separates hypervisors and their
 guests from the physical estate. A tick or a cross to the left of each name says
 whether it is up; the type and roles are tags on the line.
@@ -188,6 +184,8 @@ address already filled in: give it a MAC, a node, a type, and the row is created
 as a manual entry — which the collector will never delete, even though nothing
 answers at that address.
 
+![A VLAN: the /24 occupancy grid and the VLAN definition](docs/screenshot-ipam.png)
+
 **Correct a field.** Open any record and click the pencil next to the help
 button. Only the fields the collector never rewrites are offered. This is
 enforced server-side, so the console cannot promise you an edit that would
@@ -197,6 +195,8 @@ silently vanish on the next pass.
 is a grouping you decide — it may span several stacks, or a VM with no Docker at
 all. Attaching containers to it is what turns "this image carries 41 critical
 vulnerabilities" into "*this* service is affected".
+
+![The application inventory: status, criticality, CVE totals and where each one runs](docs/screenshot-applications.png)
 
 **Check the plumbing.** *Status* shows each component of the CMDB itself and,
 more usefully, the rows on borrowed time: what the collector no longer sees and
