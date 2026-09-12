@@ -7,7 +7,8 @@
     <rect x="13" y="40" width="24" height="7" rx="3.5" fill="#b793d3"/>
   </g>
   <text x="360" y="300" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
-        font-size="86" font-weight="600" fill="#f1f4f3" letter-spacing="-2">TinyCMDB</text>
+        font-size="86" letter-spacing="-2"><tspan fill="#4fb0ac" font-weight="400">tiny</tspan><tspan
+        fill="#f1f4f3" font-weight="600">CMDB</tspan></text>
   <text x="362" y="356" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
         font-size="30" fill="#8fa5a1">A homelab inventory, and nothing more.</text>
   <g transform="translate(362 400)" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24">

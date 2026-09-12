@@ -117,9 +117,9 @@ code { font-family: var(--mono); font-size: .88em; }
   color: var(--encre); padding: 14px 0; white-space: nowrap;
   display: flex; align-items: center; gap: 9px;
 }
-/* Un seul mot, deux couleurs : pas d'espace entre les deux moitiés, contrairement à
-   l'ancienne marque en deux mots. */
-.marque span { color: var(--auto); font-weight: 400; }
+/* Un seul mot, deux couleurs : « tiny » en sarcelle et sans graisse, « CMDB » en gras —
+   la petitesse annoncée d'abord, l'objet ensuite. */
+.marque-nom span { color: var(--auto); font-weight: 400; }
 .marque-logo { width: 21px; height: 21px; flex: none; border-radius: 5px; }
 .marque:hover { text-decoration: none; }
 .topbar nav { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
