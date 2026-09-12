@@ -22,6 +22,14 @@ Everything else follows. A collector that only touches what it owns. A console
 that only opens for editing what will survive. A database that reflects what is
 in place rather than a history of what used to be.
 
+<p align="center">
+  <img src="docs/screenshot-dashboard.png" alt="Dashboard — work queues, sorted by what costs the most if ignored" width="92%">
+</p>
+<p align="center">
+  <img src="docs/screenshot-ipam.png" alt="IPAM — /24 occupancy grid, one cell per address" width="46%">
+  <img src="docs/screenshot-record.png" alt="A node record, with the provenance of every field" width="46%">
+</p>
+
 ### What it does
 
 - **Discovers** Proxmox nodes (hypervisors, VMs, LXC containers) and the
@@ -44,6 +52,36 @@ not a limitation to work around, it is the goal: have what you need and no more.
 If the inventory grows heavy, the thing to look at is the infrastructure, not
 the code.
 
+## Why Baserow, and not SQLite?
+
+It is the first question the design invites, and it deserves a straight answer.
+A few hundred rows would fit in a SQLite file with room to spare, and shipping
+one would remove a Django, a Postgres and a Redis from the picture.
+
+Storage is the easy part. What Baserow provides is everything *around* the rows,
+and that is the part nobody wants to write:
+
+- **A schema you can change without a migration.** Add a field in Baserow and
+  both the collector and the console pick it up by name. With SQLite you would
+  write the `ALTER`, the migration path, and eventually a schema editor.
+- **Select options you can add without a deploy.** A new asset type, a new role,
+  a new criticality level: three clicks, no release.
+- **A working door to your data when the console does not cover a case.** Paste
+  thirty rows, fix a botched import, mass-correct a typo. In a CMDB the manual
+  data is precisely where the unforeseen happens — and if you are the only
+  operator, a bug in the console must not lock you out of your own inventory.
+
+The cost is stated plainly: a collaborative spreadsheet engine running for a few
+hundred rows, an API with no joins and no aggregates — which is why the whole
+graph is rebuilt in memory in `app/web/store.py` — and a database token that can
+be scoped neither by origin nor by row, which is the entire reason the console
+exists as a server-side service rather than a static page.
+
+If that trade ever stops being worth it, the exit is deliberately narrow:
+`app/web/ecriture.py` is the only module in the web service that writes, and
+everything else knows nothing but `fetch_all`. Swapping the storage means
+rewriting that file, and only that one.
+
 ### Requirements
 
 - **[Baserow](https://baserow.io/)**, used as storage. TinyCMDB ships no
@@ -53,23 +91,63 @@ the code.
 - At least one thing to inventory: a **Proxmox VE** cluster and/or **Docker**
   hosts reachable through a socket proxy.
 
-## Getting started
+## Installation
+
+**1. Prepare Baserow.** Create a database and its six tables, with the fields
+listed under [Data model](#data-model). Then create two *database tokens*
+(Settings → API tokens) — never the admin JWT, which can alter your schema:
+
+| Token | Rights |
+|---|---|
+| collector | create, read, update, delete on all six tables |
+| console (`WEB_BASEROW_TOKEN`) | read on all six; update where manual fields exist; create on `Ipam` and `Application` only; **delete nowhere** |
+
+The second token is optional but recommended: it is the one living in the
+process a browser talks to, and those four checkboxes are the only granularity
+Baserow offers.
+
+**2. Prepare the sources.** A Proxmox API token created with `--privsep 0`
+([details](#proxmox-setup)), and a socket proxy on each Docker host
+([details](#docker-setup-socket-proxy)). Either one alone is enough to start.
+
+**3. Clone and configure.**
 
 ```bash
+git clone https://github.com/YOUR-ACCOUNT/tinycmdb.git
+cd tinycmdb
 cp .env.example .env
 chmod 600 .env
-# fill in .env: BASEROW_URL, BASEROW_TOKEN, TABLE_*, and PROXMOX_URL and/or DOCKER_HOSTS
+$EDITOR .env      # BASEROW_URL, BASEROW_TOKEN, TABLE_*, PROXMOX_URL and/or DOCKER_HOSTS
+```
+
+**4. Set the published address.** In `compose.yaml`, replace
+`192.168.10.11:8080:8080` with your host's own address on your management VLAN.
+Never `0.0.0.0`: this console aggregates the entire inventory and has no
+business on your other segments.
+
+**5. Prepare the Trivy cache** — a bind mount, and the container runs as UID
+1000, so it cannot chown the directory itself:
+
+```bash
+mkdir trivy-cache && sudo chown 1000 trivy-cache
+```
+
+Skip it with `TRIVY_ENABLED=false` if you do not want vulnerability scanning;
+the Security screen will then have nothing to show.
+
+**6. Start.**
+
+```bash
 docker compose up -d --build
 docker compose logs -f collector
 ```
 
-The console is then on port 8080 of the IP declared in `compose.yaml`
-(`192.168.10.11` is an example — replace it with your host's address on your
-management VLAN, and never use `0.0.0.0`: this console aggregates the entire
-inventory and has no business on your other segments).
+The first pass takes a few minutes if Trivy has to download its vulnerability
+database (~1 GB, cached afterwards). The console is immediately available on
+port 8080 of the address set in step 4; until the first pass completes, it will
+honestly tell you the inventory is empty.
 
-The code lives inside the image. To develop without rebuilding on every line,
-mount it over the top:
+**To develop without rebuilding on every line**, mount the code over the image:
 
 ```bash
 cp compose.override.yaml.example compose.override.yaml
@@ -79,6 +157,50 @@ docker compose restart web    # after a change
 
 That override is git-ignored and has no place on a production host: the point of
 an image is that what runs is exactly what was built.
+
+To run a single pass instead of waiting for the loop: set `RUN_ONCE=true` in
+`.env`, then `docker compose run --rm collector`.
+
+## Using it
+
+Seven screens, and one idea running through all of them: what the collector owns
+is shown, what is yours can be edited.
+
+**Find what needs attention.** The dashboard is not a set of decorative
+counters: it is a list of clickable work queues, ordered by what costs the most
+if ignored — images carrying critical CVEs, versions behind, containers running
+outside any Compose project, containers attached to no application, nodes with
+no known IP address. An empty queue is the good news of the day.
+
+**Track vulnerabilities.** *Security* lists every image by severity, with the
+version Cup found available and Trivy's CVE counts. The column that matters is
+the last one: which applications are affected. An image with critical CVEs and
+no application attached is a vulnerability whose business impact cannot be
+established — which is a finding in itself.
+
+**Read the infrastructure.** *Infrastructure* separates hypervisors and their
+guests from the physical estate. A tick or a cross to the left of each name says
+whether it is up; the type and roles are tags on the line.
+
+**Manage addresses.** *IPAM* shows one grid per VLAN, one cell per address of
+the /24. Clicking an undocumented cell opens the reservation form with the
+address already filled in: give it a MAC, a node, a type, and the row is created
+as a manual entry — which the collector will never delete, even though nothing
+answers at that address.
+
+**Correct a field.** Open any record and click the pencil next to the help
+button. Only the fields the collector never rewrites are offered. This is
+enforced server-side, so the console cannot promise you an edit that would
+silently vanish on the next pass.
+
+**Declare an application.** *Applications* → *New application*. An application
+is a grouping you decide — it may span several stacks, or a VM with no Docker at
+all. Attaching containers to it is what turns "this image carries 41 critical
+vulnerabilities" into "*this* service is affected".
+
+**Check the plumbing.** *Status* shows each component of the CMDB itself and,
+more usefully, the rows on borrowed time: what the collector no longer sees and
+will actually delete, with the remaining delay.
 
 ## Local development (without Docker)
 
@@ -409,6 +531,19 @@ See `.env.example` for the full list. Two things worth calling out:
   Reconciliation rules.
 - It never talks to the Docker socket directly.
 - It keeps no state on disk: on every start, caches are rebuilt from Baserow.
+
+## Built in tandem
+
+TinyCMDB was written by two: a human who runs the homelab and decides what it
+needs, and Claude, an AI that wrote most of the lines. The judgement is the
+human's — what to build, what to throw away, and the constraint that keeps the
+whole thing small enough to hold in one head. The typing, the arguing about
+layout, and most of the comments are the model's.
+
+It shows in the code, which is why it is said here: the comments explain *why*
+far more than they explain *what*. That is a habit of the model, and a
+deliberate choice of the human — in a tool whose entire purpose is knowing who
+owns which field, the reasoning is the part worth keeping.
 
 ## License
 

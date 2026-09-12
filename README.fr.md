@@ -23,6 +23,14 @@ Le reste en découle. Un collecteur qui ne touche qu'à ce qu'il possède. Une
 console qui n'ouvre à l'édition que ce qui survivra. Une base qui reflète ce qui
 est en place plutôt qu'un historique.
 
+<p align="center">
+  <img src="docs/screenshot-dashboard.png" alt="Tableau de bord — les files de travail, triées par ce qui coûte le plus cher si on les ignore" width="92%">
+</p>
+<p align="center">
+  <img src="docs/screenshot-ipam.png" alt="IPAM — grille d'occupation d'un /24, une case par adresse" width="46%">
+  <img src="docs/screenshot-record.png" alt="La fiche d'un nœud, avec la provenance de chaque champ" width="46%">
+</p>
+
 ### Ce que ça fait
 
 - **Découvre** les nœuds Proxmox (hyperviseurs, VM, LXC) et les conteneurs de
@@ -45,6 +53,39 @@ tête — et ce plafond n'est pas une limite subie, c'est l'objectif : avoir ce
 qu'il faut et pas plus. Si l'inventaire devient lourd, c'est l'infrastructure
 qu'il faut regarder, pas le code.
 
+## Pourquoi Baserow, et pas SQLite ?
+
+C'est la première question que pose ce montage, et elle mérite une réponse
+franche. Quelques centaines de lignes tiendraient largement dans un fichier
+SQLite, et en livrer un retirerait du décor un Django, un Postgres et un Redis.
+
+Le stockage est la partie facile. Ce que Baserow apporte, c'est tout ce qu'il y a
+*autour* des lignes — et c'est précisément la partie que personne n'a envie
+d'écrire :
+
+- **Un schéma qui change sans migration.** Un champ ajouté dans Baserow est repris
+  tel quel par le collecteur et par la console, par son nom. En SQLite, il
+  faudrait écrire l'`ALTER`, tenir une discipline de migration, et finir par
+  écrire un éditeur de schéma.
+- **Des options de liste ajoutables sans déploiement.** Un nouveau type
+  d'équipement, un nouveau rôle, un niveau de criticité de plus : trois clics,
+  aucune livraison.
+- **Une porte de secours quand la console ne couvre pas le cas.** Coller trente
+  lignes, réparer un import raté, corriger une faute en masse. Dans une CMDB, la
+  donnée manuelle est exactement l'endroit où l'imprévu arrive — et quand on est
+  seul opérateur, un bug de la console ne doit pas vous enfermer dehors.
+
+Le coût est dit sans détour : un moteur de tableur collaboratif qui tourne pour
+quelques centaines de lignes, une API sans jointure ni agrégat — d'où le graphe
+reconstruit en mémoire dans `app/web/store.py` — et un token qui ne se restreint
+ni par origine ni par ligne, ce qui est toute la raison d'être d'une console
+servie côté serveur plutôt qu'une page statique.
+
+Si ce marché cessait d'être avantageux, la sortie est volontairement étroite :
+`app/web/ecriture.py` est le seul module du service web qui écrive, tout le reste
+ne connaît que `fetch_all`. Changer de stockage, c'est réécrire ce fichier, et
+lui seul.
+
 ### Prérequis
 
 - **[Baserow](https://baserow.io/)**, qui sert de stockage. TinyCMDB n'embarque
@@ -54,20 +95,62 @@ qu'il faut regarder, pas le code.
 - Au moins une source à inventorier : un cluster **Proxmox VE** et/ou des hôtes
   **Docker** joignables par socket-proxy.
 
-## Démarrage
+## Installation
+
+**1. Préparer Baserow.** Créer une base et ses six tables, avec les champs
+listés dans [Modèle de données](#modèle-de-données). Puis créer deux *database
+tokens* (Paramètres → Jetons API) — jamais le JWT admin, qui permet de modifier
+la structure :
+
+| Token | Droits |
+|---|---|
+| collecteur | create, read, update, delete sur les six tables |
+| console (`WEB_BASEROW_TOKEN`) | read partout ; update là où il y a des champs manuels ; create sur `Ipam` et `Application` seulement ; **delete nulle part** |
+
+Le second est facultatif mais recommandé : c'est celui qui vit dans le process
+auquel un navigateur parle, et ces quatre cases sont la seule granularité que
+Baserow propose.
+
+**2. Préparer les sources.** Un token Proxmox créé avec `--privsep 0`
+([détails](#prérequis-proxmox)), et un socket-proxy sur chaque hôte Docker
+([détails](#prérequis-docker--socket-proxy)). L'un des deux suffit pour démarrer.
+
+**3. Cloner et configurer.**
 
 ```bash
+git clone https://github.com/VOTRE-COMPTE/tinycmdb.git
+cd tinycmdb
 cp .env.example .env
 chmod 600 .env
-# remplir .env : BASEROW_URL, BASEROW_TOKEN, TABLE_*, et PROXMOX_URL et/ou DOCKER_HOSTS
+$EDITOR .env      # BASEROW_URL, BASEROW_TOKEN, TABLE_*, PROXMOX_URL et/ou DOCKER_HOSTS
+```
+
+**4. Fixer l'adresse publiée.** Dans `compose.yaml`, remplacer
+`192.168.10.11:8080:8080` par l'adresse de votre hôte sur votre VLAN
+d'administration. Jamais `0.0.0.0` : cette console agrège tout l'inventaire,
+elle n'a rien à faire sur les autres segments.
+
+**5. Préparer le cache Trivy** — c'est un bind-mount, et le conteneur tourne en
+UID 1000 : il ne peut pas faire le `chown` lui-même.
+
+```bash
+mkdir trivy-cache && sudo chown 1000 trivy-cache
+```
+
+À sauter avec `TRIVY_ENABLED=false` si l'analyse de vulnérabilités ne vous
+intéresse pas ; l'écran Sécurité n'aura alors rien à montrer.
+
+**6. Démarrer.**
+
+```bash
 docker compose up -d --build
 docker compose logs -f collector
 ```
 
-La console est alors sur le port 8080 de l'IP déclarée dans `compose.yaml`
-(`192.168.10.11` est une valeur d'exemple, à remplacer par celle de votre hôte
-sur le VLAN d'administration — jamais `0.0.0.0` : cette console agrège tout
-l'inventaire).
+La première passe prend quelques minutes si Trivy doit télécharger sa base de
+vulnérabilités (~1 Go, mise en cache ensuite). La console est disponible
+immédiatement sur le port 8080 de l'adresse fixée à l'étape 4 ; tant que la
+première passe n'a pas fini, elle annonce honnêtement un inventaire vide.
 
 Le code est dans l'image. Pour développer sans reconstruire à chaque ligne, le
 remonter par-dessus :
@@ -85,6 +168,49 @@ production : l'intérêt d'une image est que ce qui tourne soit exactement ce qu
 Pour tester en une seule passe sans attendre la boucle : `RUN_ONCE=true` dans
 `.env`, puis `docker compose run --rm collector` (ou lancer `python -m collector.main`
 directement dans un venv local, cf. section Tests locaux).
+
+## Prise en main
+
+Sept écrans, et une seule idée qui les traverse : ce que le collecteur possède
+s'affiche, ce qui est à vous se modifie.
+
+**Voir ce qui demande attention.** Le tableau de bord n'est pas une rangée de
+compteurs décoratifs : ce sont des files de travail cliquables, triées par ce
+qui coûte le plus cher si on les ignore — les images qui portent des CVE
+critiques, celles en retard de version, les conteneurs lancés hors de tout
+projet Compose, ceux rattachés à aucune application, les nœuds sans adresse IP
+connue. Une file vide est la bonne nouvelle du jour.
+
+**Suivre les vulnérabilités.** *Sécurité* liste les images par gravité, avec la
+version disponible trouvée par Cup et les comptages de Trivy. La colonne qui
+compte est la dernière : quelles applications sont concernées. Une image qui
+porte des CVE critiques et aucune application est une vulnérabilité dont
+l'impact métier ne peut pas être établi — ce qui est déjà un constat.
+
+**Lire l'infrastructure.** *Infrastructure* sépare les hyperviseurs et leurs
+invités du parc physique. Une coche ou une croix à gauche de chaque nom dit s'il
+répond ; le type et les rôles sont en étiquette sur la ligne.
+
+**Gérer les adresses.** *IPAM* montre une grille par VLAN, une case par adresse
+du /24. Cliquer une case non documentée ouvre la réservation, adresse déjà
+remplie : une MAC, un nœud, un type, et la ligne est créée en saisie manuelle —
+donc jamais supprimée par le collecteur, même si rien ne répond à cette adresse.
+
+**Corriger un champ.** Ouvrir une fiche, cliquer le crayon à côté du bouton
+d'aide. Seuls les champs que le collecteur ne réécrit jamais sont proposés, et
+la règle est appliquée côté serveur : la console ne peut pas vous promettre une
+saisie qui disparaîtrait au passage suivant.
+
+**Déclarer une application.** *Applications* → *Nouvelle application*. Une
+application est un regroupement que vous décidez — il peut couvrir plusieurs
+stacks, ou une VM sans Docker du tout. C'est le rattachement des conteneurs qui
+traduit « cette image porte 41 vulnérabilités critiques » en « ce service-là est
+concerné ».
+
+**Vérifier la plomberie.** *État* montre chaque composant de la CMDB elle-même
+et, plus utile, les lignes en sursis : ce que le collecteur ne revoit plus et
+qui sera réellement supprimé, avec le délai restant.
+
 
 ## Tests locaux (sans Docker)
 
@@ -423,6 +549,21 @@ Voir `.env.example` pour la liste complète. Deux points notables :
 - Ne parle jamais au socket Docker en direct.
 - N'a pas de state sur disque : à chaque démarrage, les caches sont reconstruits
   depuis Baserow.
+
+## Écrit en binôme
+
+TinyCMDB a été écrit à deux : un humain qui exploite le homelab et décide de ce
+dont il a besoin, et Claude, une IA qui a écrit la plupart des lignes. Le
+jugement est celui de l'humain — quoi construire, quoi jeter, et la contrainte
+qui garde l'ensemble assez petit pour tenir dans une seule tête. La frappe, les
+discussions sur la mise en page et la plupart des commentaires sont ceux du
+modèle.
+
+Ça se voit dans le code, et c'est pour ça que c'est écrit ici : les commentaires
+expliquent le *pourquoi* bien plus que le *quoi*. C'est une habitude du modèle,
+et un choix délibéré de l'humain — dans un outil dont le seul propos est de
+savoir à qui appartient chaque champ, le raisonnement est ce qui mérite d'être
+gardé.
 
 ## Licence
 
