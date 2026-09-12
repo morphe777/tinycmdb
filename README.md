@@ -129,10 +129,23 @@ mkdir trivy-cache && sudo chown 1000 trivy-cache
 Skip it with `TRIVY_ENABLED=false` if you do not want vulnerability scanning;
 the Security screen will then have nothing to show.
 
-**6. Start.**
+**6. Start.** Either pull the published image:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+or build it yourself from the sources you just cloned — two minutes, and nothing
+to trust but your own checkout:
 
 ```bash
 docker compose up -d --build
+```
+
+Then watch the first pass:
+
+```bash
 docker compose logs -f collector
 ```
 
@@ -208,6 +221,26 @@ vulnerabilities" into "*this* service is affected".
 **Check the plumbing.** *Status* shows each component of the CMDB itself and,
 more usefully, the rows on borrowed time: what the collector no longer sees and
 will actually delete, with the remaining delay.
+
+## The published image
+
+`ghcr.io/morphe777/tinycmdb`, built by GitHub Actions from a version tag —
+`linux/amd64` and `linux/arm64`, so a Raspberry Pi is a valid host. Also mirrored
+to Docker Hub.
+
+```
+ghcr.io/morphe777/tinycmdb:0.1.0     a given version
+ghcr.io/morphe777/tinycmdb:0.1       the latest patch of that minor
+ghcr.io/morphe777/tinycmdb:latest    the most recent release
+```
+
+Pin a version in `compose.yaml` rather than tracking `latest`: this thing writes
+to your inventory, and an unexpected change of behaviour is better discovered on
+the day you chose to upgrade.
+
+One image, two services — the collector and the console share the same code and
+the same dependencies, only the command differs. Building two would cost twice
+the build time and create the possibility that they drift apart.
 
 ## Local development (without Docker)
 
