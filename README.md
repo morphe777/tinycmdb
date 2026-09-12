@@ -107,7 +107,7 @@ Baserow offers.
 **3. Clone and configure.**
 
 ```bash
-git clone https://github.com/YOUR-ACCOUNT/tinycmdb.git
+git clone https://github.com/morphe777/tinycmdb.git
 cd tinycmdb
 cp .env.example .env
 chmod 600 .env
