@@ -1,0 +1,36 @@
+# Référence à déployer sur CHAQUE hôte Docker à inventorier, pas sur mytools
+# uniquement. Le collecteur ne doit jamais parler au socket Docker en direct :
+# c'est équivalent à root. Ce proxy n'expose que containers/images, en lecture seule.
+services:
+  socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
+    ports:
+      # IP du VLAN management, JAMAIS 0.0.0.0 : Docker manipule iptables directement
+      # et contourne les règles ufw sur l'hôte.
+      - "203.0.113.10:2375:2375"
+    networks:
+      - socket-proxy-net
+
+# Restreindre QUI peut joindre ce port (ex. seulement l'hôte du collecteur, pas tout le VLAN
+# management) ne peut PAS se faire avec ufw/iptables classique : Docker insère ses propres
+# règles NAT en amont de la chaîne INPUT et les règles de port publish gagnent toujours.
+# Le seul point d'accroche qui fonctionne est la chaîne DOCKER-USER, que Docker respecte :
+#
+#   iptables -I DOCKER-USER -p tcp --dport 2375 ! -s <IP_HOTE_COLLECTEUR> -j DROP
+#
+# À poser sur CET hôte Docker (celui qui exécute ce socket-proxy), pas sur le collecteur.
+
+networks:
+  socket-proxy-net:
+    driver: bridge

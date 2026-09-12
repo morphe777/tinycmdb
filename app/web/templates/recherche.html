@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block titre %}Recherche{% endblock %}
+
+{% set types = {'node': 'nœud', 'container': 'conteneur', 'image': 'image',
+                'ipam': 'adresse', 'vlan': 'VLAN', 'application': 'application',
+                'stack': 'stack'} %}
+
+{% block contenu %}
+<div class="page">
+  <h1>Recherche</h1>
+
+  <section class="bloc">
+    <h2>{% if q|length >= 2 %}{{ results|length }} résultat{{ 's' if results|length > 1 }} pour « {{ q }} »
+        {% else %}Recherche globale{% endif %}
+      {% call m.aide("Portée de la recherche") %}
+        <p>La recherche porte simultanément sur les nœuds, conteneurs, images, adresses,
+          VLAN, applications et stacks.</p>
+        <p>Sont interrogés les noms, mais aussi les adresses IP et MAC, les noms d'hôte,
+          les empreintes d'image, les systèmes d'exploitation, les rôles, les ports et les
+          chemins de déploiement.</p>
+        <p>L'inventaire étant chargé en mémoire, la réponse est immédiate et ne sollicite
+          pas Baserow.</p>
+      {% endcall %}
+    </h2>
+
+    {% if q|length < 2 %}
+      <p class="rien">Saisir au moins deux caractères.</p>
+    {% elif not results %}
+      <p class="rien">Aucune correspondance.</p>
+    {% else %}
+    <ul class="resultats">
+      {% for o in results %}
+      <li>
+        <span class="res-type">{{ types[o.kind] }}</span>
+        {% if o.kind == 'stack' %}{{ m.stack_lien(o) }}{% else %}{{ m.lien(o) }}{% endif %}
+        <span class="res-meta">
+          {% if o.kind == 'node' %}{{ o.sel('Type') }}{% if o.get('OS') %} · {{ o.get('OS') }}{% endif %}
+            {% if o.ips %} · {{ o.ips|map(attribute='name')|join(', ') }}{% endif %}
+          {% elif o.kind == 'container' %}{% if o.host %}sur {{ o.host.name }}{% endif %}
+            {% if o.stack %} · stack {{ o.stack.name }}{% endif %}
+          {% elif o.kind == 'image' %}{{ o.get('Registry') }}{% if o.get('Tag') %} · {{ o.get('Tag') }}{% endif %}
+          {% elif o.kind == 'ipam' %}{% if o.get('Hostname') %}{{ o.get('Hostname') }}{% endif %}
+            {% if o.get('Vendor') %} · {{ o.get('Vendor') }}{% endif %}
+          {% elif o.kind == 'vlan' %}{{ o.get('subnet') }}
+          {% elif o.kind == 'application' %}{{ o.containers|length }} conteneurs
+          {% elif o.kind == 'stack' %}{% if o.host %}sur {{ o.host.name }} · {% endif %}{{ o.containers|length }} conteneurs
+          {% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

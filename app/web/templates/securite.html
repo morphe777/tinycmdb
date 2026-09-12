@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}Sécurité et mises à jour{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <h1>Sécurité et mises à jour</h1>
+
+  <section class="bloc">
+    <h2>Images du parc
+      <span class="compte">{{ snap.images|length }} images · {{ snap.totals.scanned }} analysées</span>
+      {% call m.aide("Lecture des vulnérabilités") %}
+        <p>Le décompte est celui de Trivy, qui inspecte le contenu réel de chaque image :
+          paquets système et dépendances applicatives déclarées.</p>
+        <p>Un total élevé ne signifie pas un nombre élevé de failles exploitables. Une
+          image volumineuse et ancienne en accumule des milliers sans qu'aucune ne soit
+          nécessairement atteignable. La mesure est celle d'une dette, pas d'une alarme.</p>
+        <p>La colonne <b>version disponible</b> vient de Cup, qui compare l'image utilisée
+          à ce que publie son registre d'origine. Lorsqu'une mise à jour existe sans que la
+          version soit nommée, la comparaison a été faite par empreinte : le registre ne
+          fournit pas de tag exploitable pour cette image.</p>
+        <p>La colonne <b>stacks</b> indique quel projet Compose redéployer après mise à
+          jour de l'image.</p>
+      {% endcall %}
+    </h2>
+
+    <div class="tris">Trier par
+      <a href="?tri=cve" class="{{ 'actif' if tri == 'cve' }}">gravité</a>
+      <a href="?tri=maj" class="{{ 'actif' if tri == 'maj' }}">mise à jour disponible</a>
+      <a href="?tri=scan" class="{{ 'actif' if tri == 'scan' }}">ancienneté de l'analyse</a>
+      <a href="?tri=nom" class="{{ 'actif' if tri == 'nom' }}">nom</a>
+    </div>
+
+    {{ l.table_images(images) }}
+  </section>
+</div>
+{% endblock %}

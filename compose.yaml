@@ -1,0 +1,78 @@
+# TinyCMDB — le collecteur qui découvre, la console qui montre.
+#
+# Nom du projet fixé ici plutôt que déduit du répertoire : les conteneurs, le réseau et
+# les volumes gardent le même nom quel que soit l'endroit où le dépôt est cloné. C'est
+# aussi ce nom que TinyCMDB retrouvera dans son propre inventaire, comme stack.
+name: tinycmdb
+
+services:
+  collector:
+    build: .
+    # Étiquette de version en plus de `latest` : sans elle, revenir à la version
+    # précédente après une régression suppose de la reconstruire, donc de savoir à quel
+    # commit — ce qui est précisément ce qu'on n'a plus sous la main ce jour-là.
+    image: tinycmdb:0.1.0
+    container_name: tinycmdb-collector
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Base de vulnérabilités Trivy (~1 Go, voir sources/trivy.py) : persistante, sinon
+      # retéléchargée en entier à chaque redémarrage. `mkdir trivy-cache && chown 1000
+      # trivy-cache` avant le premier démarrage (le conteneur tourne en UID 1000, voir
+      # Dockerfile, et ne peut pas chown un volume monté lui-même).
+      - ./trivy-cache:/cache
+    networks:
+      - tinycmdb
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Console de consultation et de saisie (app/web/). Même image que le collecteur,
+  # commande différente : une seule construction, un seul jeu de dépendances.
+  web:
+    build: .
+    image: tinycmdb:0.1.0
+    container_name: tinycmdb-console
+    restart: unless-stopped
+    depends_on:
+      - collector
+    command: ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8080",
+              "--no-server-header", "--proxy-headers"]
+    env_file:
+      - .env
+    ports:
+      # Publié sur l'IP du VLAN management de l'hôte, jamais 0.0.0.0 : cette console
+      # agrège tout l'inventaire, elle n'a rien à faire sur les autres segments.
+      # Remplacer par l'IP réelle de l'hôte (voir README.md).
+      - "192.168.10.11:8080:8080"
+    # /livez et non /healthz : le premier ne répond que du process, le second charge
+    # l'inventaire depuis Baserow. Baserow indisponible ferait redémarrer la console en
+    # boucle pour une panne qui n'est pas la sienne, et qu'un redémarrage n'arrange pas.
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - tinycmdb
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  tinycmdb:
+    driver: bridge
+    # Bridge Docker standard, volontairement PAS un macvlan/ipvlan sur le VLAN management :
+    # le conteneur ne doit jamais appartenir à ce segment. Il l'atteint via le routage normal
+    # de l'hôte + des règles de pare-feu ciblées (TCP 8006 vers Proxmox, TCP 2375 vers chaque
+    # socket-proxy), configurées en dehors de ce fichier (pare-feu/ACL VLAN de l'infra, pas
+    # Docker). Si le conteneur est compromis par autre chose que sa propre logique métier
+    # (faille de dépendance, par ex.), l'attaquant reste cantonné à ce bridge, sans accès
+    # réseau direct au reste du VLAN management.

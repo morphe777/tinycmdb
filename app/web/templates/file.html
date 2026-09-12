@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}{{ queue.label }}{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <p class="fil"><a href="/">Tableau de bord</a> › file de traitement</p>
+  <h1>{{ queue.label }}</h1>
+
+  <section class="bloc">
+    <h2><span class="compte">{{ queue.count }} {{ queue.unit }}</span> — {{ queue.hint }}
+      {% if queue.key == 'no-backup' %}
+      {% call m.aide("Périmètre du calcul") %}
+        <p>La sauvegarde n'est calculée que pour les machines virtuelles et conteneurs LXC,
+          à partir des tâches vzdump déclarées sur le cluster Proxmox.</p>
+        <p>Les {{ snap.nodes|selectattr('is_manual')|list|length }} équipements saisis à la
+          main — appliances, caméras, objets connectés — n'ont pas cette information et
+          sont exclus de la file plutôt qu'affichés comme non sauvegardés. Les afficher
+          noierait les cas réels dans un bruit permanent.</p>
+      {% endcall %}
+      {% endif %}
+    </h2>
+    {{ l.liste(queue.objets) }}
+  </section>
+</div>
+{% endblock %}

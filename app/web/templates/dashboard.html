@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block titre %}Tableau de bord{% endblock %}
+
+{% block contenu %}
+<div class="page">
+
+  <h1>Tableau de bord</h1>
+
+  {% set t = snap.totals %}
+  <section class="bloc">
+    <h2>Exposition
+      {% call m.aide("Exposition") %}
+        <p>Vulnérabilités cumulées sur l'ensemble des images du parc, telles que remontées
+          par Trivy.</p>
+        <p>Le décompte se fait par image et non par conteneur : une image partagée par
+          trois conteneurs n'est à corriger qu'une fois, et la compter trois fois
+          gonflerait artificiellement le total.</p>
+        <p>Un nombre élevé de vulnérabilités ne signifie pas un nombre élevé de failles
+          exploitables. Trivy rapporte tout ce que les gestionnaires de paquets de l'image
+          déclarent, y compris des composants jamais exposés. À lire comme une mesure de
+          dette technique.</p>
+      {% endcall %}
+    </h2>
+    <div class="compteurs">
+      {{ m.compteur(t.cve_critical, 'vulnérabilités critiques', 'crit') }}
+      {{ m.compteur(t.cve_high, 'vulnérabilités hautes', 'warn') }}
+      {{ m.compteur(t.updates, 'images en retard de version', 'warn') }}
+      {{ m.compteur(t.scanned ~ ' / ' ~ t.images, 'images analysées', 'neutre') }}
+      {{ m.compteur(snap.stacks|length, 'stacks déployées', 'neutre') }}
+      {{ m.compteur(snap.nodes|length, 'nœuds inventoriés', 'neutre') }}
+    </div>
+  </section>
+
+  <div class="colonnes-2-1">
+    <section class="bloc">
+      <h2>Points d'attention
+        {% call m.aide("Points d'attention") %}
+          <p>Chaque ligne est une file de traitement, classée par ordre de conséquence :
+            une vulnérabilité critique avant un conteneur non documenté.</p>
+          <p>Les files vides restent affichées. Une file absente laisserait croire qu'elle
+            n'existe pas, alors qu'elle est simplement à zéro — l'information n'est pas la
+            même.</p>
+        {% endcall %}
+      </h2>
+      <div class="files">
+        {% for q in snap.queues %}
+        <a class="file file-{{ q.severity }} {{ 'file-vide' if q.count == 0 }}" href="/file/{{ q.key }}">
+          <span class="file-bande"></span>
+          <span class="file-texte">
+            <b>{{ q.label }}</b>
+            <small>{{ q.hint }}</small>
+          </span>
+          <span class="file-nombre">{{ q.count }}</span>
+          <span class="file-unite">{{ q.unit }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <div class="pile">
+      <section class="bloc">
+        <h2>Concentration
+          {% call m.aide("Concentration des vulnérabilités") %}
+            <p>Les images qui portent le plus de vulnérabilités critiques, par ordre
+              décroissant. La longueur de la barre est relative à la première.</p>
+            <p>Un total global ne dit pas par où commencer ; cette liste, si. Corriger les
+              premières fait tomber l'essentiel du compte, et une seule mise à jour
+              d'image suffit le plus souvent.</p>
+          {% endcall %}
+        </h2>
+        {% if snap.top_cve %}
+        <ul class="barres">
+          {% for e in snap.top_cve %}
+          <li>
+            <a class="barres-nom" href="{{ e.image.url }}" title="{{ e.image.name }}">{{ e.image.get('Repository') or e.image.name }}</a>
+            <span class="barres-piste"><i style="width:{{ e.pct }}%"></i></span>
+            <span class="barres-val">{{ e.critical }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="rien">Aucune vulnérabilité critique.</p>
+        {% endif %}
+      </section>
+
+      <section class="bloc">
+        <h2>Capacité des hyperviseurs
+          {% call m.aide("Capacité des hyperviseurs") %}
+            <p>Ressources promises aux invités démarrés, rapportées à celles dont dispose
+              réellement l'hyperviseur.</p>
+            <p><b>Le sur-engagement processeur est normal</b> — les cœurs se partagent, et
+              un rapport supérieur à 100&nbsp;% traduit simplement des invités qui ne
+              travaillent pas tous en même temps.</p>
+            <p><b>Le sur-engagement mémoire ne l'est pas.</b> La RAM ne se partage pas :
+              une machine qui en promet plus qu'elle n'en possède tombe le jour où ses
+              invités la réclament ensemble. C'est le seul des deux à surveiller, et il est
+              signalé en rouge au-delà de 100&nbsp;%.</p>
+            <p>Les invités arrêtés ne sont pas comptés : ils ne consomment rien. Le total
+              entre parenthèses rappelle ce qui serait promis s'ils démarraient tous.</p>
+          {% endcall %}
+        </h2>
+        <ul class="capacite">
+          {% for h in snap.hypervisor_capacity %}
+          <li>
+            <a class="capacite-nom" href="{{ h.host.url }}">{{ h.host.name }}</a>
+            <span class="capacite-meta">{{ h.demarres }} invités démarrés sur {{ h.invites }}</span>
+            <span class="capacite-ligne">
+              <span class="capacite-cle">vCPU</span>
+              <span class="barres-piste"><i class="barres-plein" style="width:{{ [h.vcpu_pct, 100]|min }}%"></i></span>
+              <span class="capacite-val">{{ h.vcpu }} / {{ h.vcpu_capacite }}
+                <span class="vide">({{ h.vcpu_total }} au total)</span></span>
+            </span>
+            <span class="capacite-ligne">
+              <span class="capacite-cle">RAM</span>
+              <span class="barres-piste"><i class="{{ 'barres-trop' if h.ram_pct > 100 else 'barres-plein' }}"
+                    style="width:{{ [h.ram_pct, 100]|min }}%"></i></span>
+              <span class="capacite-val {{ 'capacite-alerte' if h.ram_pct > 100 }}">{{ h.ram }} / {{ h.ram_capacite }} Go
+                <span class="vide">({{ h.ram_total }} au total)</span></span>
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="bloc">
+        <h2>Charge par hôte
+          {% call m.aide("Charge par hôte") %}
+            <p>Nombre de conteneurs déclarés sur chaque hôte Docker. La partie pleine
+              correspond à ceux en marche, la partie claire à ceux qui sont arrêtés.</p>
+            <p>Une concentration marquée sur un seul hôte indique ce qui tombe avec lui.</p>
+          {% endcall %}
+        </h2>
+        <ul class="barres">
+          {% for e in snap.hosts_load %}
+          <li>
+            <a class="barres-nom" href="{{ e.host.url }}">{{ e.host.name }}</a>
+            <span class="barres-piste">
+              <i class="barres-fond" style="width:{{ e.pct }}%"></i>
+              <i class="barres-plein" style="width:{{ e.pct_running }}%"></i>
+            </span>
+            <span class="barres-val">{{ e.running }}<span class="vide">/{{ e.total }}</span></span>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
+  </div>
+
+  <section class="bloc">
+    <h2>Composition du parc
+      {% call m.aide("Composition du parc") %}
+        <p>Répartition des {{ snap.nodes|length }} nœuds par type, et part de chacun
+          provenant d'une découverte automatique.</p>
+        <p>Les nœuds automatiques sont découverts sur Proxmox et supprimés d'eux-mêmes
+          lorsqu'ils disparaissent. Les nœuds manuels sont saisis à la main : le collecteur
+          ne les met jamais à jour et ne les supprime jamais. Leur exactitude ne dépend que
+          de la saisie.</p>
+      {% endcall %}
+    </h2>
+    <div class="parc">
+      {% for g in snap.park %}
+      <a class="parc-carte" href="/infra">
+        <span class="parc-tete"><b>{{ g.type }}</b><span class="parc-nb">{{ g.count }}</span></span>
+        <span class="barre">
+          {% if g.auto %}<i class="seg-auto" style="width:{{ g.auto_pct }}%"></i>{% endif %}
+          {% if g.manual %}<i class="seg-man" style="width:{{ 100 - g.auto_pct }}%"></i>{% endif %}
+        </span>
+        <span class="parc-detail">{{ g.auto }} auto · {{ g.manual }} manuel</span>
+        <span class="parc-roles">
+          {% for r in g.roles[:4] %}{{ m.badge(r, 'role') }}{% endfor %}
+          {% if g.roles|length > 4 %}<span class="vide">+{{ g.roles|length - 4 }}</span>{% endif %}
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}

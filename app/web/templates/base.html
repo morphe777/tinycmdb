@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titre %}Console CMDB{% endblock %} — CMDB</title>
+{# Pas de police ni de feuille de style distante : la console doit rester consultable
+   lorsque le lien Internet est coupé — c'est l'un des moments où elle sert. #}
+<link rel="stylesheet" href="/static/console.css?v={{ css_version }}">
+<script src="/static/console.js?v={{ js_version }}" defer></script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230d6b6b'/><rect x='13' y='17' width='38' height='7' rx='3.5' fill='white' opacity='.95'/><rect x='13' y='28.5' width='38' height='7' rx='3.5' fill='white' opacity='.5'/><rect x='13' y='40' width='24' height='7' rx='3.5' fill='%23b793d3'/></svg>">
+<script>
+// Appliqué avant le premier rendu : un thème posé après coup produit un éclair blanc au
+// chargement de chaque page. Trois états — clair, sombre, ou le réglage du système.
+(function () {
+  try {
+    var choix = localStorage.getItem("theme");
+    if (choix === "clair" || choix === "sombre") {
+      document.documentElement.dataset.theme = choix === "sombre" ? "dark" : "light";
+    }
+  } catch (e) { /* stockage indisponible : le réglage système s'applique */ }
+})();
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="marque" href="/">CMDB<span>console</span></a>
+  <button class="menu-bascule" type="button" aria-expanded="false"
+          aria-controls="menu-principal" aria-label="Menu">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  </button>
+  <nav id="menu-principal">
+    <a href="/" class="{{ 'actif' if request.url.path == '/' }}">Tableau de bord</a>
+    <a href="/infra" class="{{ 'actif' if request.url.path.startswith('/infra') }}">Infrastructure</a>
+    <a href="/stacks" class="{{ 'actif' if request.url.path.startswith('/stack') }}">Stacks</a>
+    <a href="/securite" class="{{ 'actif' if request.url.path.startswith('/securite') }}">Sécurité</a>
+    <a href="/applications" class="{{ 'actif' if request.url.path.startswith('/application') }}">Applications</a>
+    <a href="/ipam" class="{{ 'actif' if request.url.path.startswith(('/ipam', '/vlan', '/ip/')) }}">IPAM</a>
+    <a href="/etat" class="{{ 'actif' if request.url.path.startswith('/etat') }}">État</a>
+  </nav>
+  <form class="recherche" action="/recherche" method="get" role="search">
+    <input type="search" name="q" value="{{ q|default('') }}" placeholder="IP, MAC, hôte, conteneur, image…"
+           aria-label="Rechercher dans tout l'inventaire" autocomplete="off">
+  </form>
+  <div class="theme" role="group" aria-label="Thème">
+    <button type="button" data-theme-set="clair" title="Thème clair" aria-label="Thème clair">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><g class="rayons"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></g></svg>
+    </button>
+    <button type="button" data-theme-set="auto" title="Suivre le système" aria-label="Suivre le système">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 20h8"/></svg>
+    </button>
+    <button type="button" data-theme-set="sombre" title="Thème sombre" aria-label="Thème sombre">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+{% block contenu %}{% endblock %}
+</main>
+
+<footer class="pied">
+  <span>Instantané pris {{ snap.fetched_at|ago }} ·
+    {{ snap.nodes|length }} nœuds · {{ snap.containers|length }} conteneurs ·
+    {{ snap.stacks|length }} stacks · {{ snap.images|length }} images ·
+    {{ snap.ips|length }} adresses · {{ snap.apps|length }} applications</span>
+  <form method="post" action="/rafraichir"><button type="submit">Recharger depuis Baserow</button></form>
+</footer>
+
+<script>
+// Cascade des icônes d'application : à l'échec d'un candidat, on passe au suivant ; quand
+// il n'en reste plus, l'image se retire et laisse l'initiale. Reste en ligne — l'attribut
+// `onerror` peut se déclencher avant le chargement de console.js.
+function cascadeIcone(img) {
+  var suite = (img.dataset.suite || "").split(" ").filter(Boolean);
+  if (!suite.length) { img.remove(); return; }
+  img.dataset.suite = suite.slice(1).join(" ");
+  img.src = suite[0];
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}{{ vlan.name }}{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <p class="fil"><a href="/ipam">IPAM</a> › VLAN</p>
+  <h1>{{ vlan.name }} <span class="soustitre">{{ vlan.get('subnet') }}</span></h1>
+  {{ m.compte_rendu(enregistres) }}
+  {{ m.creation('creer-ip', 'Réserver une adresse', '/creer/ip', creation_champs,
+                creation_ouverte, creation_erreur, vlan.url, {'vlan': vlan.id}) }}
+
+  <div class="colonnes-vlan{{ ' une-colonne' if edition }}">
+    <section class="bloc">
+      {% if grid %}
+      <h2>Occupation <span class="compte">{{ vlan.ips|length }} / 254 documentées</span>
+        {% call m.aide("Grille d'occupation") %}
+          <p>Chaque case représente une adresse du sous-réseau, de .0 à .255, dans l'ordre.
+            Le survol affiche l'adresse et ce qui l'occupe.</p>
+          <p>Une case grise n'est pas nécessairement libre : elle signifie qu'aucune entrée
+            ne la documente. Sur un VLAN partiellement inventorié, l'écart entre les deux
+            est précisément ce qu'il reste à documenter.</p>
+          <p>Cliquer une case non documentée ouvre la réservation de cette adresse. La
+            ligne créée est marquée « saisie manuelle » : le collecteur ne la supprimera
+            jamais, même s'il ne voit rien répondre à cette adresse.</p>
+        {% endcall %}
+      </h2>
+      {# Le dernier octet dans chaque case : la grille est un plan d'adressage lisible, et
+         non plus seulement une mesure de remplissage. Une case non documentée est un lien
+         vers le formulaire de réservation, adresse pré-remplie — c'est un lien et non un
+         gestionnaire de clic, donc rechargeable, partageable, et utilisable sans script. #}
+      <div class="grille256">
+        {% for bloc in grid|batch(32) %}
+          <span class="grille-label">.{{ loop.index0 * 32 }}</span>
+          {% for c in bloc %}
+            {% if c.ip %}
+              <a class="case case-{{ c.state }}" href="{{ c.ip.url }}"
+                 title="{{ c.address }} — {{ c.ip.get('Hostname') or c.ip.get('FQDN') or 'sans nom' }}{% if c.ip.node %} — {{ c.ip.node.name }}{% endif %}">{{ c.host }}</a>
+            {% elif c.state == 'free' and not edition %}
+              <a class="case case-free case-libre" href="{{ vlan.url }}?nouvelle={{ c.address }}#creer-ip"
+                 data-nouvelle="{{ c.address }}"
+                 title="{{ c.address }} — non documentée · réserver cette adresse">{{ c.host }}</a>
+            {% else %}
+              <span class="case case-{{ c.state }}" title="{{ c.address }}{% if c.state == 'gateway' %} — passerelle{% elif c.state == 'network' %} — réseau ou diffusion{% else %} — non documentée{% endif %}">{{ c.host }}</span>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      </div>
+      <div class="grille-legende">
+        <span><i class="case case-auto"></i>détectée</span>
+        <span><i class="case case-manual"></i>saisie</span>
+        <span><i class="case case-check"></i>à vérifier</span>
+        <span><i class="case case-reserved"></i>réservée</span>
+        <span><i class="case case-gateway"></i>passerelle</span>
+        <span><i class="case case-free"></i>non documentée</span>
+      </div>
+      {% if not edition %}
+      <div class="bloc-pied">
+        <a class="bouton" href="{{ vlan.url }}?nouvelle=#creer-ip" data-nouvelle="">Réserver une adresse</a>
+      </div>
+      {% endif %}
+      {% else %}
+      <h2>Occupation
+        {% call m.aide("Grille d'occupation") %}
+          <p>La grille n'est dessinée que pour les sous-réseaux en /24. Les adresses de ce
+            VLAN sont listées en bas de page.</p>
+        {% endcall %}
+      </h2>
+      <p class="rien">Sous-réseau {{ vlan.get('subnet') or 'non renseigné' }} — hors format /24.</p>
+      {% endif %}
+    </section>
+
+    <section class="bloc">
+      <h2>{{ "Modification" if edition else "Définition" }}
+        {{ m.bouton_modifier(vlan, champs) if not edition }}
+        {% call m.aide("Table VLAN") %}
+          <p>Cette table est un référentiel, saisi et maintenu à la main. Le collecteur la
+            lit pour rattacher chaque adresse à son sous-réseau, et n'y écrit jamais rien.</p>
+          <p>Tous ses champs sont donc modifiables depuis cette console. La création d'un
+            VLAN reste à faire dans Baserow.</p>
+        {% endcall %}
+      </h2>
+      {% if edition %}
+      {{ m.edition(vlan, champs, erreur) }}
+      {% else %}
+      <table class="fiche">
+        {% for r in rows %}
+        <tr>
+          <th>{{ r.field }}</th>
+          <td>{{ m.valeur(r, vlan) }}</td>
+          {% if not origine_commune %}<td class="col-origine">{{ m.origine(r.origin) }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="bloc">
+    <h2>Adresses <span class="compte">{{ vlan.ips|length }}</span></h2>
+    {{ l.liste(vlan.ips) }}
+  </section>
+</div>
+{% endblock %}

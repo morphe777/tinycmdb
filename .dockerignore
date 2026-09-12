@@ -1,0 +1,13 @@
+.git/
+.env
+.env.example
+README.md
+docs/
+compose.yaml
+compose.override.yaml
+compose.override.yaml.example
+socket-proxy.compose.yaml
+trivy-cache/
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}Applications{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <h1>Applications</h1>
+  {{ m.creation('creer-app', 'Nouvelle application', '/creer/application', creation_champs,
+                creation_ouverte, creation_erreur, '/applications') }}
+
+  {% set orphelins = snap.containers|rejectattr('apps')|list %}
+
+  <section class="bloc">
+    <h2>Inventaire applicatif
+      <span class="compte">{{ apps|length }} applications</span>
+      <a class="bouton bouton-discret" href="/applications?nouvelle=1#creer-app"
+         data-nouvelle="">Nouvelle application</a>
+      {% call m.aide("Applications") %}
+        <p>Une application est un regroupement fonctionnel, décidé et saisi à la main. Le
+          collecteur n'écrit jamais dans cette table : un projet Docker Compose est un fait
+          technique, pas un service au sens métier.</p>
+        <p>C'est ce rattachement qui permet de traduire « cette image porte 63
+          vulnérabilités critiques » en « ce service-là est concerné ».</p>
+        {% if orphelins %}
+        <p>{{ orphelins|length }} conteneurs ne sont rattachés à aucune application. Leurs
+          vulnérabilités ne remontent dans aucune ligne de ce tableau.</p>
+        {% endif %}
+      {% endcall %}
+    </h2>
+
+    {% if orphelins %}
+    <p class="rappel">{{ orphelins|length }} conteneurs sans application rattachée.
+      <a href="/file/containers-no-app">Voir la liste</a></p>
+    {% endif %}
+
+    {{ l.table_apps(apps) }}
+  </section>
+</div>
+{% endblock %}

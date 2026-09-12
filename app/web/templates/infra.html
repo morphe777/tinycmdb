@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block titre %}Infrastructure{% endblock %}
+
+{#
+  Deux cadres — Virtualisation et Parc physique — et à l'intérieur de chacun, une mise en
+  colonnes par hyperviseur et par domaine.
+
+  Le problème d'origine n'était pas l'absence de cadres mais la longueur des lignes : sur
+  1200 pixels de large, trois informations espacées obligeaient l'œil à traverser du vide
+  pour les relier, et il fallait dérouler toute la page pour atteindre les objets
+  connectés. Les colonnes règlent les deux. Les encadrer une à une découpait en revanche
+  la page en confettis : la division utile est la colonne, pas le cadre.
+
+  Les caractéristiques (processeurs, mémoire, adresses) passent sous le nom plutôt qu'à
+  l'opposé de la ligne, pour la même raison.
+#}
+{% macro ligne(n, recursif=true) %}
+<li>
+  <div class="arbre-ligne">
+    {{ m.lien(n) }}
+    {{ m.badge_option(n.sel('Type') or '—', n.sel_couleur('Type')) }}
+    {% for r, teinte in n.multi_colore('Roles') %}{{ m.badge_option(r, teinte) }}{% endfor %}
+  </div>
+  {% set adresses = n.ips %}
+  {% if n.get('vCPU') or adresses or n.containers %}
+  <div class="arbre-meta">
+    {% if n.get('vCPU') %}{{ n.get('vCPU') }} vCPU{% endif %}
+    {% if n.get('RAM_Gb') %} · {{ n.get('RAM_Gb') }} Go{% endif %}
+    {% for ip in adresses %} · <a href="{{ ip.url }}"><code>{{ ip.name }}</code></a>{% endfor %}
+    {% if n.containers %} · <a href="{{ n.url }}">{{ n.containers|length }} conteneurs</a>{% endif %}
+    {% if not n.is_manual and n.sel('Type') in ('VM', 'LXC') and not n.get('Backup') %}
+      · <span class="alerte-inline">hors sauvegarde</span>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if n.children and recursif %}
+  <ul>{% for c in n.children %}{{ ligne(c) }}{% endfor %}</ul>
+  {% endif %}
+</li>
+{% endmacro %}
+
+{% block contenu %}
+<div class="page">
+  <h1>Infrastructure</h1>
+
+  <header class="entete-section">
+    <h2>Virtualisation
+      <span class="compte">{{ snap.hypervisors|length }} hyperviseurs ·
+        {{ snap.nodes|length - snap.physical|length }} invités</span>
+      {% call m.aide("Virtualisation") %}
+        <p>Les hyperviseurs Proxmox et les machines qu'ils portent, machines virtuelles
+          comme conteneurs LXC.</p>
+        <p>Tout est découvert automatiquement : ces lignes apparaissent, se mettent à jour
+          et disparaissent au rythme de Proxmox, sans intervention.</p>
+        <p>La mention « hors sauvegarde » se fonde sur les tâches vzdump déclarées au
+          niveau du cluster. Une sauvegarde faite par un autre moyen n'y figure pas.</p>
+      {% endcall %}
+    </h2>
+  </header>
+
+  <section class="bloc">
+    <div class="grille-cartes">
+    {% for hv in snap.hypervisors %}
+    {# Un hyperviseur qui porte beaucoup d'invités prend deux colonnes de la grille et
+       répartit sa liste sur deux colonnes internes : sinon sa carte fait à elle seule la
+       hauteur de l'écran, et la comparaison avec le second hyperviseur devient impossible. #}
+    <section class="carte-infra {{ 'carte-large' if hv.children|length > 6 }}">
+      <h3 class="carte-titre">{{ m.lien(hv) }}
+        <span class="compte">{{ hv.children|length }} invités ·
+          {{ hv.get('vCPU') }} vCPU · {{ hv.get('RAM_Gb') }} Go</span>
+      </h3>
+      <ul class="arbre">
+        {% for c in hv.children %}{{ ligne(c) }}{% endfor %}
+      </ul>
+    </section>
+    {% endfor %}
+    </div>
+  </section>
+
+  <header class="entete-section">
+    <h2>Parc physique
+      <span class="compte">{{ snap.physical|length }} équipements</span>
+      {% call m.aide("Parc physique") %}
+        <p>Tout ce qui existe matériellement, hyperviseurs compris — ils figurent ici comme
+          machines réelles, et plus haut comme racines de l'arbre de virtualisation.</p>
+        <p>Le regroupement suit le type de chaque nœud, et chaque équipement n'apparaît
+          que dans un groupe. Un serveur physique reste un serveur physique, même quand il
+          rend un service réseau : son rôle est affiché en étiquette sur sa ligne, et la
+          recherche le retrouve par ce rôle.</p>
+        <p>Les invités ne sont pas redessinés ici : ils figurent dans les cartes de
+          virtualisation ci-dessus.</p>
+        <p>À l'exception des hyperviseurs, ces équipements sont saisis à la main. Le
+          collecteur ne les découvre pas et n'y touche jamais.</p>
+      {% endcall %}
+    </h2>
+  </header>
+
+  <section class="bloc">
+    <div class="grille-cartes">
+    {% for g in snap.physical_groups %}
+    <section class="carte-infra">
+      <h3 class="carte-titre">{{ g.label }}<span class="compte">{{ g.nodes|length }}</span></h3>
+      <ul class="arbre">
+        {% for n in g.nodes %}{{ ligne(n, recursif=false) }}{% endfor %}
+      </ul>
+    </section>
+    {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

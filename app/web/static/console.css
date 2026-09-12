@@ -1,0 +1,945 @@
+/* Console CMDB — feuille unique, embarquée, aucune dépendance distante.
+   La console doit s'afficher quand le lien Internet est coupé : c'est précisément le
+   moment où on la consulte.
+
+   Deux couleurs portent tout le propos : sarcelle = écrit par le collecteur,
+   prune = saisi à la main. Le reste (rouge / ambre / vert) est réservé à la gravité,
+   jamais à la décoration. */
+
+:root {
+  --fond: #f1f4f3;
+  --surface: #ffffff;
+  --surface-2: #e7edeb;
+  --encre: #13201e;
+  --encre-2: #4a5b58;
+  --encre-3: #74847f;
+  --trait: #d2dbd9;
+  --trait-fort: #b4c2bf;
+
+  --auto: #0d6b6b;
+  --auto-doux: #d9eae8;
+  --manuel: #6c4a86;
+  --manuel-doux: #e8dcef;
+
+  --crit: #9e2a1e;
+  --crit-doux: #f6dedb;
+  --warn: #855307;
+  --warn-doux: #f7e8cf;
+  --ok: #2b6540;
+  --ok-doux: #dbeae0;
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Trois états, pas deux : un choix explicite clair ou sombre est inscrit en
+   data-theme sur la racine ; sans choix, le réglage du système s'applique. La garde
+   :not([data-theme="light"]) fait gagner le choix explicite sur le système. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+--fond: #0f1514;
+    --surface: #161e1d;
+    --surface-2: #1e2827;
+    --encre: #dfe8e6;
+    --encre-2: #a3b3b0;
+    --encre-3: #7c8c89;
+    --trait: #2a3634;
+    --trait-fort: #3c4b49;
+
+    --auto: #4fb0ac;
+    --auto-doux: #16322f;
+    --manuel: #b793d3;
+    --manuel-doux: #2a2137;
+
+    --crit: #e08172;
+    --crit-doux: #3a201c;
+    --warn: #d9a34e;
+    --warn-doux: #352a15;
+    --ok: #74c08c;
+    --ok-doux: #18301f;
+  }
+}
+
+:root[data-theme="dark"] {
+--fond: #0f1514;
+    --surface: #161e1d;
+    --surface-2: #1e2827;
+    --encre: #dfe8e6;
+    --encre-2: #a3b3b0;
+    --encre-3: #7c8c89;
+    --trait: #2a3634;
+    --trait-fort: #3c4b49;
+
+    --auto: #4fb0ac;
+    --auto-doux: #16322f;
+    --manuel: #b793d3;
+    --manuel-doux: #2a2137;
+
+    --crit: #e08172;
+    --crit-doux: #3a201c;
+    --warn: #d9a34e;
+    --warn-doux: #352a15;
+    --ok: #74c08c;
+    --ok-doux: #18301f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fond);
+  color: var(--encre);
+  font: 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Le navigateur déclare `[hidden] { display: none }` sans classe : la moindre de nos
+   règles `display: flex` l'emporte, et un élément masqué par le script reste visible.
+   Le cas s'est produit sur le filtre des menus déroulants, qui ne masquait rien. */
+[hidden] { display: none !important; }
+
+a { color: var(--auto); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--auto); outline-offset: 2px; border-radius: 5px;
+}
+code { font-family: var(--mono); font-size: .88em; }
+
+/* ------------------------------------------------------------------ barre du haut */
+.topbar {
+  display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+  padding: 0 22px; background: var(--surface);
+  border-bottom: 1px solid var(--trait);
+  position: sticky; top: 0; z-index: 10;
+}
+.marque {
+  font-weight: 650; letter-spacing: -.02em; font-size: 16px;
+  color: var(--encre); padding: 14px 0; white-space: nowrap;
+}
+.marque span { color: var(--auto); font-weight: 400; margin-left: 5px; }
+.marque:hover { text-decoration: none; }
+.topbar nav { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
+.topbar nav a {
+  padding: 14px 12px; color: var(--encre-2); font-size: 14px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.topbar nav a:hover { color: var(--encre); text-decoration: none; }
+.topbar nav a.actif { color: var(--auto); border-bottom-color: var(--auto); font-weight: 550; }
+.recherche input {
+  font: inherit; font-size: 13.5px; width: 270px; max-width: 40vw;
+  padding: 7px 11px; border: 1px solid var(--trait-fort); border-radius: 9px;
+  background: var(--fond); color: var(--encre);
+}
+
+/* ------------------------------------------------------------------ structure */
+main { min-height: 70vh; }
+.page { max-width: 1240px; margin: 0 auto; padding: 30px 22px 60px; }
+h1 {
+  font-size: 26px; font-weight: 650; letter-spacing: -.02em;
+  margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+h1 .soustitre { font-weight: 400; font-size: 16px; color: var(--encre-3); font-family: var(--mono); }
+h2 {
+  font-size: 16px; font-weight: 600; margin: 0 0 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+.bloc { position: relative; }
+h2 .compte { font-weight: 400; font-size: 13px; color: var(--encre-3); }
+.intro { color: var(--encre-2); max-width: 74ch; margin: 0 0 26px; }
+.note { color: var(--encre-3); font-size: 13px; max-width: 78ch; margin: 12px 0 0; }
+.fil { font-size: 12.5px; color: var(--encre-3); margin: 0 0 6px; text-transform: lowercase; }
+.bloc {
+  background: var(--surface); border: 1px solid var(--trait); border-radius: 12px;
+  padding: 18px 20px 20px; margin-top: 24px;
+}
+.deux-colonnes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+/* Sans min-width: 0, une colonne de grille prend la largeur minimale de son contenu : une
+   référence d'image ou une liste de conteneurs déborde alors hors de l'écran. */
+.deux-colonnes > * { min-width: 0; }
+@media (max-width: 900px) { .deux-colonnes { grid-template-columns: 1fr; } }
+.avertissement {
+  background: var(--warn-doux); border-left: 3px solid var(--warn);
+  padding: 12px 16px; border-radius: 0 10px 10px 0; font-size: 13.5px;
+  color: var(--encre-2); margin: 0 0 22px; max-width: 82ch;
+}
+.avertissement-manuel { background: var(--manuel-doux); border-left-color: var(--manuel); }
+.rien { color: var(--encre-3); font-style: italic; padding: 18px 0; }
+
+/* ------------------------------------------------------------------ files d'attente */
+.files { display: flex; flex-direction: column; border: 1px solid var(--trait);
+         border-radius: 12px; overflow: hidden; background: var(--surface); }
+.file {
+  display: grid; grid-template-columns: 3px 1fr auto auto; align-items: center;
+  gap: 0 16px; padding: 0; border-bottom: 1px solid var(--trait); color: inherit;
+}
+.file:last-child { border-bottom: 0; }
+.file:hover { background: var(--surface-2); text-decoration: none; }
+.file-bande { width: 3px; height: 100%; min-height: 54px; background: var(--trait-fort); }
+.file-crit .file-bande { background: var(--crit); }
+.file-warn .file-bande { background: var(--warn); }
+.file-info .file-bande { background: var(--auto); }
+.file-texte { padding: 11px 0; }
+.file-texte b { display: block; font-weight: 550; font-size: 14.5px; }
+.file-texte small { display: block; color: var(--encre-3); font-size: 12.5px; margin-top: 1px; }
+.file-nombre { font-family: var(--mono); font-size: 21px; font-variant-numeric: tabular-nums; }
+.file-crit .file-nombre { color: var(--crit); }
+.file-warn .file-nombre { color: var(--warn); }
+.file-unite { font-size: 12px; color: var(--encre-3); padding-right: 18px; min-width: 78px; }
+.file-vide { opacity: .52; }
+.file-vide .file-nombre { color: var(--encre-3); }
+
+/* ------------------------------------------------------------------ compteurs */
+.compteurs { display: flex; flex-wrap: wrap; gap: 0; }
+.compteur { padding: 4px 26px 4px 0; margin-right: 26px; border-right: 1px solid var(--trait); }
+.compteur:last-child { border-right: 0; }
+.compteur b {
+  display: block; font-family: var(--mono); font-size: 25px; font-weight: 500;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.compteur span { font-size: 12.5px; color: var(--encre-3); }
+.compteur-crit b { color: var(--crit); }
+.compteur-warn b { color: var(--warn); }
+
+/* ------------------------------------------------------------------ tableaux */
+.tbl-scroll { overflow-x: auto; margin: 0 -20px; padding: 0 20px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl th {
+  text-align: left; font-weight: 550; font-size: 11.5px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--encre-3); padding: 0 12px 7px 0;
+  border-bottom: 1px solid var(--trait); white-space: nowrap;
+}
+.tbl td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--trait); vertical-align: top; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums;
+            white-space: nowrap; }
+.tbl th.num { text-align: right; }
+.tbl .roles { line-height: 2; }
+.tbl .ligne-crit td { background: var(--crit-doux); }
+.col-prov { min-width: 150px; }
+.col-prov small { color: var(--encre-3); font-size: 11.5px; }
+
+.fiche { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.fiche th {
+  text-align: left; font-weight: 500; color: var(--encre-3); font-size: 12.5px;
+  padding: 7px 14px 7px 0; white-space: nowrap; vertical-align: top; width: 1%;
+}
+.fiche td { padding: 7px 0; border-bottom: 1px solid var(--trait); vertical-align: top;
+             overflow-wrap: break-word; }
+.fiche td code { overflow-wrap: anywhere; }
+.fiche tr:last-child td { border-bottom: 0; }
+.fiche .col-origine { text-align: right; white-space: nowrap; width: 1%; padding-left: 12px; }
+.origine-ligne-manuel th { color: var(--manuel); }
+
+/* ------------------------------------------------------------------ marqueurs */
+.src {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  flex: none; margin-right: 6px; vertical-align: baseline;
+}
+.src-auto { background: var(--auto); }
+.src-man { background: var(--manuel); }
+
+.objlink { display: inline-flex; align-items: baseline; }
+
+
+/* Un nœud et son hôte parent : myTools « sur » Biggy. */
+.chaine { display: inline-flex; align-items: baseline; gap: 5px; margin-right: 14px; }
+.chaine-sur { color: var(--encre-3); font-size: 11.5px; margin: 0 5px; white-space: nowrap; }
+
+/* Icône d'application : l'initiale sert de fond, le favicon se pose par-dessus quand il
+   charge. Si l'image échoue, elle se retire (voir macros.html) et l'initiale réapparaît —
+   pas de case vide, pas d'image cassée. */
+.appicon {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex: none; border-radius: 9px; margin-right: 8px;
+  background: var(--surface-2); color: var(--encre-3);
+  font-size: 11px; font-weight: 600; line-height: 1; overflow: hidden;
+}
+.appicon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+               background: var(--surface); }
+/* L'icône s'aligne sur la première ligne du nom : un nom qui passe à la ligne laissait
+   sinon l'icône seule au-dessus, comme détachée de ce qu'elle désigne. */
+.app-cellule { display: inline-flex; align-items: flex-start; }
+.app-cellule .appicon { margin-top: 1px; }
+h1 .appicon { width: 30px; height: 30px; border-radius: 12px; font-size: 15px; margin-right: 2px; }
+
+.objlinks { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
+
+.badge {
+  display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 7px;
+  background: var(--surface-2); color: var(--encre-2); border: 1px solid var(--trait);
+  margin-right: 3px; white-space: nowrap;
+}
+.badge-ok { background: var(--ok-doux); color: var(--ok); border-color: transparent; }
+.badge-crit { background: var(--crit-doux); color: var(--crit); border-color: transparent; }
+.badge-warn { background: var(--warn-doux); color: var(--warn); border-color: transparent; }
+.badge-role { background: transparent; color: var(--encre-3); }
+/* Étiquette à la teinte définie dans Baserow : fond très dilué, texte à la teinte pleine.
+   color-mix garde la lisibilité sur les deux thèmes sans dupliquer la palette. */
+.badge-teinte {
+  background: color-mix(in srgb, var(--teinte) 17%, transparent);
+  color: var(--teinte);
+  border-color: color-mix(in srgb, var(--teinte) 32%, transparent);
+}
+
+.origine {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+  padding: 1px 6px; border-radius: 7px; cursor: help;
+}
+.origine-auto { background: var(--auto-doux); color: var(--auto); }
+.origine-enrichi { background: var(--warn-doux); color: var(--warn); }
+.origine-manuel { background: var(--manuel-doux); color: var(--manuel); }
+
+.bool { font-size: 12.5px; font-weight: 550; }
+.bool-oui { color: var(--ok); }
+.bool-non { color: var(--encre-3); }
+.vide { color: var(--encre-3); font-size: 12.5px; }
+.unite { color: var(--encre-3); font-size: 11.5px; }
+.long { white-space: pre-wrap; }
+.maj { color: var(--warn); font-size: 12.5px; }
+.alerte-inline { color: var(--crit); }
+
+.cve { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cve b { font-weight: 600; }
+.cve i { color: var(--trait-fort); font-style: normal; margin: 0 2px; }
+.cve-crit { color: var(--crit); }
+.cve-high { color: var(--warn); }
+.cve-zero { color: var(--encre-3); }
+
+.barre { display: flex; height: 7px; border-radius: 5px; overflow: hidden;
+         background: var(--surface-2); margin-bottom: 3px; }
+.barre i { display: block; height: 100%; }
+.seg-auto { background: var(--auto); }
+.seg-man { background: var(--manuel); }
+
+.jauge { display: block; width: 90px; height: 5px; background: var(--surface-2);
+         border-radius: 7px; overflow: hidden; }
+.jauge i { display: block; height: 100%; background: var(--warn); }
+
+/* ------------------------------------------------------------------ cartes */
+/* Le titre de section vit au-dessus du cadre, pas dedans : il nomme le bloc, il n'en fait
+   pas partie. Il porte aussi son bouton d'aide, d'où le positionnement relatif.
+
+   Deux cadres seulement — Virtualisation et Parc physique — et à l'intérieur la même
+   grille de colonnes. Les « cartes » ne sont plus des objets encadrés mais de simples
+   colonnes : multiplier les cadres imbriqués découpait la page en confettis, alors que la
+   division utile n'est qu'une mise en colonnes. */
+.entete-section { position: relative; margin: 30px 0 -12px; }
+.entete-section h2 { margin: 0; font-size: 17px; }
+.grille-cartes {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 10px 26px; align-items: start;
+}
+.carte-infra { min-width: 0; }
+.carte-titre {
+  display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  font-size: 14px; font-weight: 600; margin: 0 0 10px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--trait-fort);
+}
+.carte-titre .compte { font-weight: 400; font-size: 11.5px; color: var(--encre-3);
+                       margin-left: auto; }
+@media (min-width: 1100px) {
+  .carte-large { grid-column: span 2; }
+  .carte-large > .arbre { columns: 2; column-gap: 24px; }
+  /* Sans ça, une ligne se coupe en deux au changement de colonne. */
+  .carte-large > .arbre > li { break-inside: avoid; }
+}
+
+/* ------------------------------------------------------------------ arbre */
+.arbre, .arbre ul { list-style: none; margin: 0; padding: 0; }
+.arbre ul { margin-left: 20px; border-left: 1px solid var(--trait); padding-left: 14px; }
+.arbre > li, .arbre ul > li { padding: 6px 0; border-bottom: 1px solid var(--trait); }
+.arbre > li:last-child { border-bottom: 0; }
+.arbre-ligne { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.arbre-meta { color: var(--encre-3); font-size: 11.5px; margin-top: 2px; }
+.arbre-meta code { font-size: 11px; }
+.arbre-meta a { color: var(--encre-3); }
+.arbre-meta a:hover { color: var(--auto); }
+
+/* Domaines de l'écran Infrastructure. Le titre porte l'intitulé, le compte et la raison
+   d'être du regroupement : sans cette dernière, un regroupement ressemble à une lubie. */
+.domaine + .domaine { margin-top: 26px; }
+.domaine-titre {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-size: 13px; font-weight: 600; letter-spacing: .01em;
+  padding-bottom: 6px; margin: 0 0 4px; border-bottom: 2px solid var(--trait-fort);
+}
+.domaine-titre .compte {
+  font-family: var(--mono); font-weight: 400; font-size: 12px; color: var(--encre-3);
+}
+.domaine-titre small {
+  font-weight: 400; font-size: 12px; color: var(--encre-3); margin-left: auto;
+  text-align: right;
+}
+
+/* ------------------------------------------------------------------ IPAM */
+.vlans { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 14px; }
+.vlan-carte {
+  background: var(--surface); border: 1px solid var(--trait); border-radius: 12px;
+  padding: 14px 15px 12px; color: inherit; display: flex; flex-direction: column; gap: 7px;
+}
+.vlan-carte:hover { border-color: var(--auto); text-decoration: none; }
+.vlan-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.vlan-tete b { font-size: 14.5px; }
+.vlan-tag { font-family: var(--mono); font-size: 11px; color: var(--encre-3); }
+.vlan-subnet { color: var(--encre-2); font-size: 12.5px; }
+.vlan-pied { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--encre-3); }
+.vlan-jauge { display: block; height: 4px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
+.vlan-jauge i { display: block; height: 100%; background: var(--auto); }
+
+.grille256 { display: grid; grid-template-columns: auto repeat(32, 1fr); gap: 2px; align-items: center; }
+
+
+.grille-legende { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px;
+                  font-size: 12px; color: var(--encre-3); }
+.grille-legende i { width: 10px; height: 10px; display: inline-block;
+                    vertical-align: -1px; margin-right: 5px; aspect-ratio: auto; }
+
+/* ------------------------------------------------------------------ divers */
+.tris { font-size: 13px; color: var(--encre-3); margin-bottom: 16px; }
+.tris a { margin-left: 10px; }
+.tris a.actif { color: var(--encre); font-weight: 550; text-decoration: underline; }
+
+.resultats { list-style: none; margin: 0; padding: 0; }
+.resultats li {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 9px 0; border-bottom: 1px solid var(--trait);
+}
+.res-type {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--encre-3); min-width: 82px;
+}
+.res-meta { color: var(--encre-3); font-size: 12.5px; }
+.liste-simple { list-style: none; margin: 0; padding: 0; }
+.liste-simple li { padding: 6px 0; border-bottom: 1px solid var(--trait); }
+
+/* ------------------------------------------------------------------ pied */
+.pied {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  border-top: 1px solid var(--trait); padding: 16px 22px 40px;
+  font-size: 12.5px; color: var(--encre-3);
+}
+.pied form { margin: 0; }
+.pied button {
+  font: inherit; font-size: 12.5px; padding: 4px 10px; cursor: pointer;
+  border: 1px solid var(--trait-fort); border-radius: 9px;
+  background: var(--surface); color: var(--encre-2);
+}
+.pied button:hover { border-color: var(--auto); color: var(--auto); }
+.pied .legende { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.pied .legende .src { margin-left: 10px; }
+
+/* ------------------------------------------------------------------ sélecteur de thème */
+.theme { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
+.theme button {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 24px; padding: 0; cursor: pointer;
+  border: 0; border-radius: 9px; background: transparent; color: var(--encre-3);
+}
+.theme button:hover { color: var(--encre); }
+.theme button[aria-pressed="true"] { background: var(--surface); color: var(--auto); }
+.theme svg { width: 15px; height: 15px; fill: none; stroke: currentColor;
+             stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ------------------------------------------------------------------ aide contextuelle */
+/* Bâtie sur <details> : fonctionne sans JavaScript. Le texte explicatif reste hors de
+   l'écran tant qu'il n'est pas demandé, ce qui laisse la page aux données. */
+.aide { position: relative; margin-left: auto; }
+.aide > summary {
+  list-style: none; cursor: help; width: 17px; height: 17px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--trait-fort); color: var(--encre-3);
+  font-size: 10.5px; font-weight: 600; font-style: italic; font-family: Georgia, serif;
+  user-select: none;
+}
+.aide > summary::-webkit-details-marker { display: none; }
+.aide > summary:hover, .aide[open] > summary {
+  border-color: var(--auto); color: var(--auto); background: var(--auto-doux);
+}
+.aide-panneau {
+  position: absolute; z-index: 30; right: 0; top: 24px; width: min(420px, 80vw);
+  background: var(--surface); border: 1px solid var(--trait-fort); border-radius: 12px;
+  padding: 16px 18px; box-shadow: 0 4px 24px -6px rgba(0, 0, 0, .28);
+  font-size: 13px; font-weight: 400; line-height: 1.55; color: var(--encre-2);
+  text-align: left;
+}
+.aide-panneau b { display: block; color: var(--encre); font-size: 12px;
+                  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.aide-panneau p { margin: 0 0 .7em; }
+.aide-panneau p:last-child { margin-bottom: 0; }
+.lecteur-ecran {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ stacks */
+.stacklink { display: inline-flex; align-items: center; white-space: nowrap; }
+.stack-glyphe {
+  width: 9px; height: 9px; flex: none; margin-right: 6px; border-radius: 1px;
+  background:
+    linear-gradient(var(--auto), var(--auto)) top/100% 2px no-repeat,
+    linear-gradient(var(--auto), var(--auto)) center/100% 2px no-repeat,
+    linear-gradient(var(--auto), var(--auto)) bottom/100% 2px no-repeat;
+  opacity: .85;
+}
+.stack-glyphe.grand { width: 15px; height: 15px; margin-right: 10px; }
+.chemin { font-size: 11.5px; color: var(--encre-3); }
+
+/* ------------------------------------------------------------------ divers */
+.liens-suite { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; margin: 16px 0 0; }
+.rappel {
+  font-size: 13px; color: var(--encre-2); margin: 0 0 16px;
+  padding: 9px 13px; border-radius: 9px; background: var(--manuel-doux);
+}
+.rappel a { color: var(--manuel); }
+.conteneur-stack { display: inline-flex; align-items: baseline; margin-right: 14px; }
+
+/* ================================================================== mises en page */
+/* Le contenu était presque entièrement empilé en colonne. Ces grilles répartissent
+   latéralement ce qui n'a pas besoin d'être lu dans l'ordre. */
+.colonnes-2-1 {
+  display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
+  gap: 20px; align-items: start; margin-top: 22px;
+}
+.colonnes-2-1 > .bloc, .colonnes-2-1 > .pile > .bloc { margin-top: 0; }
+.pile { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+/* ================================================================== graphiques */
+.barres { list-style: none; margin: 0; padding: 0; display: flex;
+          flex-direction: column; gap: 9px; }
+.barres li { display: grid; grid-template-columns: minmax(0, 1fr) 88px auto;
+             align-items: center; gap: 12px; font-size: 13px; }
+.barres-nom {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--encre-2);
+}
+.barres-nom:hover { color: var(--auto); }
+.barres-piste {
+  position: relative; height: 8px; border-radius: 99px; background: var(--surface-2);
+  overflow: hidden;
+}
+.barres-piste i {
+  position: absolute; left: 0; top: 0; height: 100%; border-radius: 99px;
+  background: var(--crit);
+}
+.barres-fond { background: var(--auto); opacity: .28; }
+.barres-plein { background: var(--auto); }
+.barres-val {
+  font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums;
+  color: var(--crit); min-width: 2.5em; text-align: right;
+}
+.barres-val .vide { font-size: 11.5px; }
+
+/* Cartes de composition du parc : une grille de cartes plutôt qu'un tableau en hauteur. */
+.parc { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; }
+.parc-carte {
+  display: flex; flex-direction: column; gap: 7px; padding: 13px 15px 14px;
+  border: 1px solid var(--trait); border-radius: 12px; color: inherit;
+  background: var(--fond);
+}
+.parc-carte:hover { border-color: var(--auto); text-decoration: none; }
+.parc-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.parc-tete b { font-size: 14px; }
+.parc-nb { font-family: var(--mono); font-size: 17px; color: var(--encre-2); }
+.parc-detail { font-size: 11.5px; color: var(--encre-3); }
+.parc-roles { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+
+/* ================================================================== état en pictogramme */
+.etat { display: inline-flex; flex: none; width: 16px; height: 16px; }
+.etat svg { width: 100%; height: 100%; fill: none; stroke: var(--encre-3);
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.etat-ok svg { stroke: var(--ok); }
+.etat-crit svg { stroke: var(--crit); }
+.etat-warn svg { stroke: var(--warn); fill: var(--warn); }
+
+/* Un hôte par ligne : alignés, les maillons « machine sur machine » se confondent. */
+.chaines { display: flex; flex-direction: column; gap: 3px; }
+.chaines .chaine { margin-right: 0; }
+
+/* ================================================================== menu et responsive */
+.menu-bascule {
+  display: none; align-items: center; justify-content: center;
+  width: 34px; height: 30px; padding: 0; cursor: pointer; margin-left: auto;
+  border: 1px solid var(--trait-fort); border-radius: 9px;
+  background: var(--surface); color: var(--encre-2);
+}
+.menu-bascule svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
+                    stroke-width: 1.8; stroke-linecap: round; }
+
+@media (max-width: 1080px) {
+  .colonnes-2-1 { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 860px) {
+  .topbar { gap: 10px; padding: 0 16px; flex-wrap: wrap; }
+  .marque { padding: 11px 0; }
+  .menu-bascule { display: inline-flex; }
+  /* Le menu passe sous la barre et s'ouvre à la demande : sept entrées sur deux lignes
+     repoussaient la recherche hors de vue sur un téléphone. */
+  .topbar nav {
+    display: none; order: 3; width: 100%; flex-direction: column; gap: 0;
+    border-top: 1px solid var(--trait); padding-bottom: 6px;
+  }
+  .topbar nav.ouvert { display: flex; }
+  .topbar nav a {
+    padding: 11px 4px; border-bottom: 0; border-left: 2px solid transparent; margin: 0;
+  }
+  .topbar nav a.actif { border-left-color: var(--auto); border-bottom-color: transparent;
+                        background: var(--auto-doux); border-radius: 0 7px 7px 0; }
+  .recherche { order: 2; flex: 1; min-width: 0; }
+  .recherche input { width: 100%; max-width: none; }
+  .theme { order: 1; }
+
+  .page { padding: 20px 16px 46px; }
+  h1 { font-size: 22px; }
+  .bloc { padding: 15px 15px 17px; border-radius: 10px; }
+  .compteur { padding-right: 18px; margin-right: 18px; }
+  .compteur b { font-size: 21px; }
+
+  /* Les tableaux larges défilent dans leur cadre, jamais la page entière. */
+  .tbl-scroll { margin: 0 -15px; padding: 0 15px; }
+  .tbl { font-size: 12.5px; }
+  .tbl td, .tbl th { padding-right: 9px; }
+
+  .aide-panneau { width: min(320px, calc(100vw - 48px)); }
+  .vlans { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .parc { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
+  .barres li { grid-template-columns: minmax(0, 1fr) 60px auto; gap: 9px; }
+  .arbre-meta { margin-left: 0; text-align: left; width: 100%; }
+  .arbre ul { margin-left: 10px; padding-left: 10px; }
+  .pied { padding: 14px 16px 32px; }
+  .pied .legende { margin-left: 0; }
+}
+
+@media (max-width: 560px) {
+  /* Sur téléphone, la fiche passe en deux lignes par champ : trois colonnes dans
+     360 pixels ne laissent la place à aucune des trois. Une grille plutôt qu'un
+     positionnement absolu — l'étiquette de provenance participe alors à la largeur au lieu
+     de déborder du cadre. */
+  .fiche, .fiche tbody { display: block; width: auto; }
+  .fiche tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px;
+    padding: 9px 0; border-bottom: 1px solid var(--trait);
+  }
+  .fiche tr:last-child { border-bottom: 0; }
+  .fiche th { display: block; width: auto; grid-column: 1; grid-row: 1;
+              padding: 0; white-space: normal; }
+  .fiche td { display: block; width: auto; padding: 0; border-bottom: 0;
+              grid-column: 1 / -1; }
+  .fiche .col-origine { grid-column: 2; grid-row: 1; width: auto;
+                        padding: 0; text-align: right; }
+  /* La recherche prend sa propre ligne : coincée entre la marque et le sélecteur de
+     thème, il ne lui restait pas de quoi lire ce qu'on y tape. */
+  .recherche { flex: 1 0 100%; order: 4; padding-bottom: 8px; }
+
+  .compteurs { gap: 4px 0; }
+  .compteur { flex: 1 0 42%; border-right: 0; margin-right: 0; }
+  .file { grid-template-columns: 3px 1fr auto; }
+  .file-unite { display: none; }
+  h1 .soustitre { font-size: 13px; }
+}
+
+/* ============================================================ grille d'adressage */
+/* Le dernier octet est écrit dans chaque case : la grille cesse d'être une mesure de
+   remplissage pour devenir un plan d'adressage qu'on lit adresse par adresse. Seize par
+   ligne, avec l'adresse de début en gouttière. */
+.grille-label {
+  font-family: var(--mono); font-size: 10px; color: var(--encre-3);
+  padding-right: 5px; text-align: right; font-variant-numeric: tabular-nums;
+}
+.case {
+  aspect-ratio: 1; border-radius: 4px; background: var(--surface-2); display: flex;
+  align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; font-variant-numeric: tabular-nums;
+  color: var(--encre-3); text-decoration: none; line-height: 1; overflow: hidden;
+}
+a.case:hover { outline: 2px solid var(--encre); outline-offset: 1px; text-decoration: none; }
+.case-auto, .case-manual, .case-check, .case-gateway { color: rgba(255,255,255,.82); }
+:root[data-theme="dark"] .case-auto, :root[data-theme="dark"] .case-manual,
+:root[data-theme="dark"] .case-check, :root[data-theme="dark"] .case-gateway { color: #0f1514; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .case-auto, :root:not([data-theme="light"]) .case-manual,
+  :root:not([data-theme="light"]) .case-check, :root:not([data-theme="light"]) .case-gateway {
+    color: #0f1514;
+  }
+}
+.case-network, .case-reserved { color: var(--encre-2); }
+.grille-legende i.case { width: 11px; height: 11px; aspect-ratio: auto; font-size: 0; }
+
+/* Les couleurs d'état viennent APRÈS la règle .case : à spécificité égale, c'est la
+   dernière qui l'emporte, et les définir avant les faisait disparaître. */
+.case-auto { background: var(--auto); }
+.case-manual { background: var(--manuel); }
+.case-check { background: var(--warn); }
+.case-reserved { background: var(--trait-fort); }
+.case-gateway { background: var(--ok); }
+.case-network { background: var(--trait); }
+.case-free { background: var(--surface-2); }
+
+/* La colonne de gauche prend plus de place : les nombres ont besoin de largeur. */
+.colonnes-vlan {
+  display: grid; grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 20px; align-items: start;
+}
+.colonnes-vlan > * { min-width: 0; }
+@media (max-width: 1000px) { .colonnes-vlan { grid-template-columns: 1fr; } }
+/* Les deux cadres s'alignent sur la même hauteur : deux blocs côte à côte de
+   hauteurs différentes donnent une page bancale. */
+.colonnes-vlan > .bloc { margin-top: 0; }
+
+/* ============================================================ état à gauche du nom */
+.etat { display: inline-flex; flex: none; width: 15px; height: 15px; margin-right: 7px; }
+.etat-vide { width: 15px; }
+.etat-perdu svg { stroke: var(--encre-3); }
+.objnom { overflow-wrap: break-word; }
+.objlink .src { margin-left: 6px; margin-right: 0; }
+.stacklink { display: inline-flex; align-items: center; }
+.objlink .stack-glyphe { margin-right: 6px; }
+
+/* ============================================================ capacité */
+.capacite { list-style: none; margin: 0; padding: 0; display: flex;
+            flex-direction: column; gap: 16px; }
+.capacite-nom { font-weight: 550; font-size: 13.5px; }
+.capacite-meta { display: block; font-size: 11.5px; color: var(--encre-3); margin-bottom: 7px; }
+.capacite-ligne {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; margin-bottom: 5px;
+}
+.capacite-cle { font-size: 11px; color: var(--encre-3); text-transform: uppercase;
+                letter-spacing: .04em; }
+.capacite-val { font-family: var(--mono); font-size: 11.5px;
+                font-variant-numeric: tabular-nums; color: var(--encre-2); white-space: nowrap; }
+.capacite-val .vide { font-size: 10.5px; }
+.capacite-alerte { color: var(--crit); }
+.barres-trop { background: var(--crit); }
+
+/* Pictogramme de nature : plus discret que le marqueur d'état, il accompagne un nom
+   plutôt qu'il ne le signale. */
+.nat { display: inline-flex; flex: none; width: 13px; height: 13px; margin-right: 6px; }
+.nat-vide { width: 0; margin-right: 0; }
+.nat svg { width: 100%; height: 100%; fill: none; stroke: var(--encre-3);
+           stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.objlink:hover .nat svg { stroke: var(--auto); }
+
+/* ============================================================ verdict de collecte */
+.verdict { border-left: 3px solid var(--trait-fort); }
+.verdict-ok { border-left-color: var(--ok); }
+.verdict-warn { border-left-color: var(--warn); }
+.verdict-ko { border-left-color: var(--crit); }
+.verdict-tete { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.verdict-tete b { display: block; font-size: 17px; letter-spacing: -.01em; }
+.verdict-tete span span, .verdict-tete div span { font-size: 13px; color: var(--encre-3); }
+.verdict-glyphe { display: inline-flex; width: 34px; height: 34px; flex: none; }
+.verdict-glyphe svg { width: 100%; height: 100%; fill: none; stroke-width: 2;
+                      stroke-linecap: round; stroke-linejoin: round; }
+.verdict-ok .verdict-glyphe svg { stroke: var(--ok); }
+.verdict-warn .verdict-glyphe svg { stroke: var(--warn); }
+.verdict-ko .verdict-glyphe svg { stroke: var(--crit); }
+
+.composants { display: flex; flex-wrap: wrap; gap: 9px; }
+.composant {
+  display: inline-flex; align-items: center; gap: 9px; padding: 8px 13px 8px 10px;
+  border: 1px solid var(--trait); border-radius: 99px; background: var(--fond);
+}
+.composant b { font-size: 12.5px; font-weight: 550; display: block; }
+.composant small { font-size: 11px; color: var(--encre-3); display: block; }
+.composant-glyphe { display: inline-flex; width: 17px; height: 17px; flex: none; }
+.composant-glyphe svg { width: 100%; height: 100%; fill: none; stroke: var(--encre-3);
+                        stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.composant-ok .composant-glyphe svg { stroke: var(--ok); }
+.composant-warn .composant-glyphe svg { stroke: var(--warn); }
+.composant-ko .composant-glyphe svg { stroke: var(--crit); }
+.composant-warn { border-color: var(--warn); background: var(--warn-doux); }
+.composant-ko { border-color: var(--crit); background: var(--crit-doux); }
+
+/* ------------------------------------------------------------------ saisie
+   La prune est, dans toute la console, la couleur de ce qui est saisi à la main. Le
+   formulaire en hérite : il n'introduit pas une couleur d'accent de plus, il emploie
+   celle qui désigne déjà, sur chaque fiche, les champs qu'il permet de modifier. */
+
+.bouton {
+  font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 10px;
+  border: 1px solid var(--trait-fort); background: var(--surface); color: var(--encre-2);
+}
+.bouton:hover { border-color: var(--manuel); color: var(--manuel); text-decoration: none; }
+.bouton-primaire {
+  background: var(--manuel); border-color: var(--manuel); color: #fff; font-weight: 550;
+}
+.bouton-primaire:hover { filter: brightness(1.08); color: #fff; border-color: var(--manuel); }
+.bouton-discret { margin-left: auto; font-size: 12.5px; padding: 6px 12px; font-weight: 400; }
+.bouton-discret + .aide { margin-left: 10px; }
+
+/* Crayon d'accès à la modification : même gabarit que le « i » d'aide, dont il devient le
+   voisin immédiat. C'est l'aide qui portait la marge automatique ; elle passe au crayon
+   lorsqu'il la précède, sans quoi les deux se sépareraient de toute la largeur du titre. */
+.icone-action {
+  margin-left: auto; flex: none;
+  width: 17px; height: 17px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--trait-fort); color: var(--encre-3);
+}
+.icone-action + .aide { margin-left: 7px; }
+.icone-action svg {
+  width: 10px; height: 10px; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.icone-action:hover {
+  border-color: var(--manuel); color: var(--manuel); background: var(--manuel-doux);
+  text-decoration: none;
+}
+
+.une-colonne { grid-template-columns: 1fr !important; }
+
+/* Grille de champs plutôt qu'une pile : sur un écran large, onze champs empilés font
+   défiler une page entière pour corriger une mémoire. Le nombre de colonnes est fixé par
+   paliers et non par `auto-fill` — au-delà de trois, des champs de saisie alignés cessent
+   de se lire comme un formulaire. */
+.edition { display: grid; grid-template-columns: 1fr; gap: 18px 26px; align-items: start; }
+@media (min-width: 620px) { .edition { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .edition { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.barre-form, .alerte-form, .champ-large { grid-column: 1 / -1; }
+.champ { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.champ > label {
+  font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--encre-3);
+}
+.champ input[type="text"], .champ input[type="url"], .champ input[type="number"],
+.champ select, .champ textarea {
+  font: inherit; font-size: 14px; width: 100%; box-sizing: border-box;
+  padding: 9px 11px; border: 1px solid var(--trait-fort); border-radius: 9px;
+  background: var(--fond); color: var(--encre);
+}
+.champ textarea { resize: vertical; min-height: 78px; line-height: 1.5; }
+.champ input:focus, .champ select:focus, .champ textarea:focus {
+  border-color: var(--manuel); outline: 2px solid color-mix(in srgb, var(--manuel) 30%, transparent);
+  outline-offset: 0;
+}
+.champ .notice { font-size: 12px; color: var(--encre-3); line-height: 1.45; }
+.rien-champ { margin: 0; font-size: 13px; color: var(--encre-3); font-style: italic; }
+
+/* Cases à cocher plutôt qu'un <select multiple> : sur téléphone, une liste à sélection
+   multiple exige un appui maintenu que rien n'indique, et n'affiche que trois lignes. */
+.choix {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 14px;
+  max-height: 210px; overflow-y: auto;
+  padding: 9px 11px; border: 1px solid var(--trait-fort); border-radius: 9px;
+  background: var(--fond);
+}
+.choix label, .bascule {
+  display: flex; align-items: center; gap: 7px; font-size: 13.5px;
+  padding: 3px 0; cursor: pointer; min-width: 0;
+}
+.choix label span, .choix label { overflow-wrap: break-word; }
+.champ input[type="checkbox"] { accent-color: var(--manuel); width: 15px; height: 15px; margin: 0; }
+.bascule { font-size: 14px; }
+
+.barre-form {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 4px; border-top: 1px solid var(--trait); margin-top: 2px;
+}
+.barre-form .bouton { margin-top: 12px; }
+
+.alerte-form {
+  margin: 0; padding: 11px 13px; border-radius: 10px; font-size: 13.5px; line-height: 1.5;
+  background: var(--crit-doux); color: var(--crit);
+  border: 1px solid color-mix(in srgb, var(--crit) 30%, transparent);
+}
+
+/* Compte rendu d'enregistrement. Volontairement discret et non masquable : il disparaît
+   à la navigation suivante, et un bandeau à fermer pour une note corrigée serait un
+   geste de plus pour rien. */
+.bandeau {
+  margin: 0 0 16px; padding: 10px 13px; border-radius: 10px;
+  font-size: 13.5px; color: var(--encre-2);
+  background: var(--surface); border: 1px solid var(--trait);
+}
+.bandeau-ok {
+  background: var(--ok-doux); color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+}
+
+@media (max-width: 560px) {
+  .choix { grid-template-columns: 1fr; max-height: 250px; }
+  .bouton-discret { margin-left: 0; }
+  .barre-form .bouton { flex: 1; justify-content: center; }
+}
+
+/* ------------------------------------------------------------------ sélecteur filtrable
+   Le panneau est en flux tant que le script ne s'est pas exécuté : la liste de cases à
+   cocher reste alors visible et utilisable, telle que le gabarit l'écrit. C'est
+   `.combo-actif`, posée par le script, qui le décolle et le referme. */
+.combo { position: relative; }
+.combo-declencheur {
+  font: inherit; font-size: 14px; text-align: left; cursor: pointer; width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 11px; border: 1px solid var(--trait-fort); border-radius: 9px;
+  background: var(--fond); color: var(--encre);
+}
+.combo-declencheur:hover { border-color: var(--manuel); }
+.combo-declencheur[aria-expanded="true"] { border-color: var(--manuel); }
+.combo-resume { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-resume.combo-vide { color: var(--encre-3); }
+.combo-fleche {
+  width: 15px; height: 15px; flex: none; color: var(--encre-3);
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.combo-declencheur[aria-expanded="true"] .combo-fleche { transform: rotate(180deg); }
+
+.combo-actif .combo-panneau {
+  /* Positionné par rapport à la fenêtre, et non au champ : dans une boîte de dialogue qui
+     défile, un panneau en `absolute` est découpé par elle au lieu de la déborder. Les
+     coordonnées sont posées par le script à l'ouverture — c'est le prix de ce débordement,
+     et il n'y en a pas d'autre en CSS seul.
+
+     Il peut aussi être plus large que son champ : une liste de vingt applications sur une
+     seule colonne se parcourt à l'ascenseur, sur deux elle se lit. */
+  position: fixed; z-index: 60; top: 0; left: 0; width: 340px;
+  padding: 8px; border: 1px solid var(--trait-fort); border-radius: 10px;
+  background: var(--surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .16);
+}
+.combo-actif .choix {
+  border: 0; background: transparent; padding: 0; max-height: 236px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 2px 12px;
+}
+.combo-filtre {
+  font: inherit; font-size: 13.5px; width: 100%; box-sizing: border-box;
+  padding: 7px 10px; margin-bottom: 7px;
+  border: 1px solid var(--trait-fort); border-radius: 8px;
+  background: var(--fond); color: var(--encre);
+}
+.combo-filtre:focus { border-color: var(--manuel); outline: none; }
+.combo-rien { margin: 7px 2px 2px; font-size: 13px; color: var(--encre-3); font-style: italic; }
+
+/* ------------------------------------------------------------------ fenêtre de création
+   Rendue par le serveur avec l'attribut `open` lorsqu'on arrive par un lien : elle
+   s'affiche alors dans le flux de la page. Le script la repasse en modale. */
+.dialogue {
+  border: 1px solid var(--trait); border-radius: 14px; padding: 20px 22px 22px;
+  background: var(--surface); color: var(--encre);
+  width: min(740px, calc(100% - 28px)); margin: 20px auto;
+  max-height: calc(100vh - 40px); overflow: auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .26);
+}
+.dialogue::backdrop { background: rgba(6, 12, 11, .48); }
+.dialogue-tete {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; margin-bottom: 2px;
+}
+.dialogue-tete h2 { margin: 0; }
+.dialogue-fermer {
+  font-size: 24px; line-height: 1; padding: 0 6px; color: var(--encre-3); flex: none;
+}
+.dialogue-fermer:hover { color: var(--encre); text-decoration: none; }
+
+/* Action portant sur le bloc entier : en bas à droite, hors du titre. Dans le titre,
+   elle se serait rangée après le « i » d'aide — dont la marge automatique aurait alors
+   laissé celui-ci au milieu de la ligne, entre deux éléments alignés à droite. */
+.bloc-pied { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+/* Une case non documentée est un lien vers sa propre réservation : elle doit s'annoncer
+   comme telle au survol, dans la couleur de la saisie manuelle qu'elle produira. */
+a.case-libre { cursor: pointer; }
+a.case-libre:hover {
+  background: var(--manuel); color: rgba(255, 255, 255, .9);
+  outline: 2px solid var(--manuel); outline-offset: 1px;
+}

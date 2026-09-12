@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block titre %}État du collecteur{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <h1>État du collecteur</h1>
+
+  <section class="bloc verdict verdict-{{ 'ko' if en_defaut|selectattr('verdict', 'equalto', 'ko')|list
+                                          else ('warn' if en_defaut else 'ok') }}">
+    <h2>Composants
+      {% call m.aide("Composants de la CMDB") %}
+        <p>L'état du dispositif d'inventaire lui-même : le collecteur qui découvre, la base
+          qui stocke, cette console qui affiche, les socket-proxies interrogés sur chaque
+          hôte Docker, et les deux outils appelés en sous-processus.</p>
+        <p><b>Collecteur</b> — déduit de l'écriture la plus récente, toutes tables
+          confondues. Le collecteur ne publie pas son état : c'est la seule mesure
+          disponible, et c'est de toute façon celle qui compte.</p>
+        <p><b>Socket-proxy</b> — un par hôte Docker. Lorsque le collecteur est arrêté, leur
+          état est <i>indéterminé</i> et non mauvais : personne ne les interroge, donc
+          personne ne peut dire s'ils répondraient. Les afficher en défaut ferait clignoter
+          cinq composants pour une seule panne, et masquerait la vraie.</p>
+        <p><b>Cup</b> — inscrit le résultat de sa comparaison sans horodater son passage.
+          Sa fraîcheur n'est mesurable nulle part.</p>
+        <p><b>Trivy</b> — mesuré sur la date d'analyse qu'il inscrit lui-même dans chaque
+          image.</p>
+        <p>Où regarder en cas de défaut : le collecteur et ses journaux
+          (<code>docker compose logs collector</code>), le token Proxmox qui doit être créé
+          avec <code>--privsep 0</code>, les socket-proxies sur le port 2375, et le volume
+          <code>/cache</code> de Trivy qui doit appartenir à l'UID 1000.</p>
+      {% endcall %}
+    </h2>
+
+    <div class="verdict-tete">
+      {% if not en_defaut %}
+        <span class="verdict-glyphe"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+        <div><b>Tout fonctionne</b>
+          <span>Les {{ composants|length }} composants de la CMDB répondent normalement.</span></div>
+      {% else %}
+        <span class="verdict-glyphe">
+          {% if en_defaut|selectattr('verdict', 'equalto', 'ko')|list %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          {% else %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5v6M12 16.8v.2"/><path d="M12 3.2l9 16H3z"/></svg>
+          {% endif %}
+        </span>
+        <div><b>{{ en_defaut|map(attribute='label')|join(', ') }}</b>
+          <span>{{ en_defaut|map(attribute='probleme')|select|first or "à vérifier" }}</span></div>
+      {% endif %}
+    </div>
+
+    <div class="composants">
+      {% for c in composants %}
+      <span class="composant composant-{{ c.verdict }}" title="{{ c.probleme or c.valeur }}">
+        <span class="composant-glyphe">
+          {% if c.verdict == 'ok' %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+          {% elif c.verdict == 'warn' %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5v6M12 16.8v.2"/><path d="M12 3.2l9 16H3z"/></svg>
+          {% elif c.verdict == 'ko' %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          {% else %}<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-dasharray="3 2.6"/></svg>
+          {% endif %}
+        </span>
+        <span class="composant-texte">
+          <b>{{ c.label }}</b>
+          <small>{{ c.valeur }}{% if c.depuis %} · {{ c.depuis }}{% endif %}</small>
+        </span>
+      </span>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="bloc">
+    <h2>Sources
+      {% call m.aide("Lecture de ce tableau") %}
+        <p>Le collecteur ne publie pas son état. Celui-ci est déduit de la date de dernière
+          écriture de chaque population d'assets — ce qui répond de toute façon à la
+          question utile : de quand datent ces données.</p>
+        <p><b>Assets suivis</b> est le nombre d'assets dont la source est responsable :
+          les nœuds découverts sur Proxmox, les conteneurs de chaque hôte Docker, les
+          images analysées. Ces nombres ne s'additionnent pas en un total de la base : une
+          image est comptée une fois, quel que soit le nombre de conteneurs qui l'utilisent.</p>
+        <p>Les intervalles par défaut sont de 15 minutes pour les conteneurs, 1 heure pour
+          les nœuds, 6 heures pour Cup et 24 heures pour Trivy. Une source datant de
+          quelques heures n'est donc pas nécessairement en défaut.</p>
+        <p>Cup ne figure pas dans ce tableau : il inscrit le résultat de sa comparaison sans
+          horodater son passage, sa date de dernière exécution n'existe nulle part.
+          {{ snap.totals.updates }} images sont actuellement signalées en retard de version.</p>
+      {% endcall %}
+    </h2>
+    <table class="tbl">
+      <thead><tr><th>Source</th><th class="num">Assets suivis</th><th>Dernière écriture</th><th>Fraîcheur</th></tr></thead>
+      <tbody>
+      {% for s in sources %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td class="num">{{ s.count }}</td>
+        <td>{{ s.seen|datefr }}</td>
+        <td>
+          {% if s.age_hours is none %}<span class="vide">jamais</span>
+          {% elif s.age_hours < 2 %}<span class="bool bool-oui">{{ s.seen|ago }}</span>
+          {% elif s.age_hours < 26 %}<span class="badge badge-neutre">{{ s.seen|ago }}</span>
+          {% else %}<span class="badge badge-warn">{{ s.seen|ago }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="bloc">
+    <h2>Assets en sursis <span class="compte">{{ expiring|length }}</span>
+      {% call m.aide("Assets en sursis") %}
+        <p>Un asset que le collecteur ne revoit plus est supprimé pour de bon au bout de
+          {{ snap.cfg.RETIRE_GRACE_HOURS }} heures. C'est le parti pris du projet : la CMDB
+          reflète ce qui est en place, elle ne conserve pas d'historique.</p>
+        <p>Un asset figure ici lorsqu'il est en retard <b>sur les autres assets de sa
+          table</b>, et non lorsqu'il est simplement ancien. Si le collecteur est à
+          l'arrêt, tout est ancien et rien n'est menacé : il reverra l'ensemble à son
+          redémarrage. Comparer à l'horloge ferait clignoter l'inventaire entier à chaque
+          interruption, et cette alerte ne voudrait plus rien dire.</p>
+        <p>Les assets saisis à la main ne figurent jamais ici : ils sont protégés
+          indéfiniment.</p>
+      {% endcall %}
+    </h2>
+
+    {% if not expiring %}
+      <p class="rien">Tous les assets automatiques ont été revus au dernier passage de leur
+        source.</p>
+    {% else %}
+    <div class="tbl-scroll"><table class="tbl">
+      <thead><tr><th>Asset</th><th>Type</th><th>Vu pour la dernière fois</th>
+        <th>Retard sur sa table</th><th>Suppression dans</th><th></th></tr></thead>
+      <tbody>
+      {% for e in expiring %}
+      <tr class="{{ 'ligne-crit' if e.remaining_hours < 12 }}">
+        <td>{{ m.lien(e.obj) }}</td>
+        <td>{{ {'node': 'nœud', 'container': 'conteneur', 'image': 'image',
+                'ipam': 'adresse'}[e.obj.kind] }}</td>
+        <td>{{ e.seen|datefr }} <span class="vide">({{ e.seen|ago }})</span></td>
+        <td>{{ e.retard_hours|hours }}</td>
+        <td>{% if e.remaining_hours <= 0 %}<span class="badge badge-crit">au prochain passage</span>
+            {% else %}{{ e.remaining_hours|hours }}{% endif %}</td>
+        <td><span class="jauge" title="{{ e.age_hours|round }} h écoulées sur {{ snap.cfg.RETIRE_GRACE_HOURS }}">
+          <i style="width:{{ [100, (100 * e.age_hours / snap.cfg.RETIRE_GRACE_HOURS)]|min|round }}%"></i></span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+  </section>
+
+  <section class="bloc">
+    <h2>Cet instantané</h2>
+    <table class="fiche">
+      <tr><th>Pris</th><td>{{ snap.fetched_at|datefr }} <span class="vide">({{ snap.fetched_at|ago }})</span></td></tr>
+      <tr><th>Durée de vie du cache</th><td>{{ snap.cfg.CACHE_TTL }} s</td></tr>
+      <tr><th>Baserow</th><td><code>{{ snap.cfg.BASEROW_URL }}</code></td></tr>
+      <tr><th>Écriture</th><td>champs manuels, réservation d'adresses, déclaration
+        d'applications — aucune suppression</td></tr>
+    </table>
+  </section>
+</div>
+{% endblock %}

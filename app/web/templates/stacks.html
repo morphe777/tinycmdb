@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}Stacks{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <h1>Stacks</h1>
+
+  <section class="bloc">
+    <h2>Projets Docker Compose
+      <span class="compte">{{ snap.stacks|length }} stacks · {{ snap.containers|length - hors_stack|length }} conteneurs</span>
+      {% call m.aide("Stacks") %}
+        <p>Une stack est un projet Docker Compose : l'ensemble des conteneurs déclarés dans
+          un même fichier, déployés et redéployés ensemble.</p>
+        <p>Elle n'a pas de table dédiée. Le collecteur rapporte le nom du projet sur chaque
+          conteneur, et le regroupement est reconstitué ici — l'information étant déjà
+          portée par les conteneurs, une table de plus n'apporterait rien à tenir à jour.</p>
+        <p>La stack est ce qui distingue des conteneurs homonymes : trois
+          <code>docker-socket-proxy</code> déployés sur trois hôtes appartiennent à trois
+          stacks différentes.</p>
+        <p>Une stack est l'unité de reproductibilité de l'infrastructure : ce qui en fait
+          partie peut être redéployé à l'identique, ce qui n'en fait pas partie ne le peut
+          pas.</p>
+      {% endcall %}
+    </h2>
+
+    <div class="tbl-scroll"><table class="tbl">
+      <thead><tr>
+        <th>Stack</th><th>Hôte</th><th class="num">Conteneurs</th><th class="num">Images</th>
+        <th class="num">CVE C/H</th><th class="num">MAJ</th><th>Applications</th><th>Chemin</th>
+      </tr></thead>
+      <tbody>
+      {% for s in snap.stacks %}
+      <tr>
+        <td>{{ m.stack_lien(s) }}</td>
+        <td>{% if s.host %}{{ m.chaine(s.host) }}{% else %}<span class="vide">—</span>{% endif %}</td>
+        <td class="num">{{ s.running }}{% if s.running != s.containers|length %}<span class="vide"> / {{ s.containers|length }}</span>{% endif %}</td>
+        <td class="num">{{ s.images|length }}</td>
+        <td class="num"><span class="cve"><b class="{{ 'cve-crit' if s.cve_critical else 'cve-zero' }}">{{ s.cve_critical }}</b><i>/</i><span class="{{ 'cve-high' if s.cve_high else 'cve-zero' }}">{{ s.cve_high }}</span></span></td>
+        <td class="num">{% if s.updates %}<span class="maj">{{ s.updates }}</span>{% else %}<span class="vide">0</span>{% endif %}</td>
+        <td>{{ m.liens(s.apps, vide='—') }}</td>
+        <td>{% if s.compose_path %}<code class="chemin">{{ s.compose_path }}</code>{% else %}<span class="vide">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+
+  {% if hors_stack %}
+  <section class="bloc">
+    <h2>Conteneurs hors stack
+      <span class="compte">{{ hors_stack|length }}</span>
+      {% call m.aide("Conteneurs hors stack") %}
+        <p>Conteneurs lancés directement, sans passer par un fichier Compose. Ils
+          fonctionnent, mais rien ne permet de les redéployer à l'identique : leur
+          configuration n'existe que dans le moteur Docker de leur hôte.</p>
+        <p>La perte de l'hôte entraîne la perte de cette configuration.</p>
+      {% endcall %}
+    </h2>
+    {{ l.table_conteneurs(hors_stack) }}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

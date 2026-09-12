@@ -1,0 +1,16 @@
+# Surcharge de développement — copier en `compose.override.yaml` (ignoré par git).
+#
+# Remonte le code par-dessus celui de l'image : `docker compose restart web` suffit alors
+# après une modification, au lieu d'une reconstruction. En lecture seule, délibérément :
+# ces process ont des accès en lecture sur le plan de management Proxmox et sur tous les
+# sockets Docker du parc, ils n'ont aucune raison de pouvoir réécrire leur propre code.
+#
+# À ne pas laisser en place sur une machine de production : l'intérêt d'une image est que
+# ce qui tourne soit exactement ce qui a été construit.
+services:
+  collector:
+    volumes:
+      - ./app:/app:ro
+  web:
+    volumes:
+      - ./app:/app:ro

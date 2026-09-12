@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <rect width="1280" height="640" fill="#13201e"/>
+  <g transform="translate(150 232) scale(2.75)">
+    <rect width="64" height="64" rx="14" fill="#0d6b6b"/>
+    <rect x="13" y="17" width="38" height="7" rx="3.5" fill="#ffffff" opacity=".95"/>
+    <rect x="13" y="28.5" width="38" height="7" rx="3.5" fill="#ffffff" opacity=".5"/>
+    <rect x="13" y="40" width="24" height="7" rx="3.5" fill="#b793d3"/>
+  </g>
+  <text x="360" y="300" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="86" font-weight="600" fill="#f1f4f3" letter-spacing="-2">TinyCMDB</text>
+  <text x="362" y="356" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="30" fill="#8fa5a1">L'inventaire d'un homelab, et rien de plus.</text>
+  <g transform="translate(362 400)" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24">
+    <rect x="0" y="0" width="13" height="13" rx="3" fill="#4fb0ac"/>
+    <text x="26" y="12" fill="#c3d2cf">découvert par le collecteur</text>
+    <rect x="340" y="0" width="13" height="13" rx="3" fill="#b793d3"/>
+    <text x="366" y="12" fill="#c3d2cf">saisi à la main</text>
+  </g>
+</svg>

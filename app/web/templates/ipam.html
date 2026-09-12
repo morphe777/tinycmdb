@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}IPAM{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <h1>Plan d'adressage</h1>
+
+  <section class="bloc">
+    <h2>VLAN
+      <span class="compte">{{ snap.ips|length }} adresses · {{ snap.vlans|length }} VLAN</span>
+      {% call m.aide("Plan d'adressage") %}
+        <p>Le collecteur ne découvre que les adresses des invités Proxmox. Toutes les
+          autres sont saisies à la main.</p>
+        <p>Pour une adresse saisie, trois champs suffisent : l'adresse, l'adresse MAC et le
+          nœud. Le collecteur en déduit ensuite le VLAN d'appartenance, le constructeur à
+          partir du préfixe MAC, le nom d'hôte et le FQDN par résolution DNS inverse, et
+          les tient à jour à chaque passage.</p>
+        <p>La table VLAN est un référentiel : elle est lue pour rattacher chaque adresse à
+          son sous-réseau, jamais écrite.</p>
+      {% endcall %}
+    </h2>
+
+    <div class="vlans">
+      {% for v in snap.vlans %}
+      <a class="vlan-carte" href="{{ v.url }}">
+        <span class="vlan-tete">
+          <b>{{ v.name }}</b>
+          <span class="vlan-tag">VLAN {{ v.get('vlan_id') }}</span>
+        </span>
+        <code class="vlan-subnet">{{ v.get('subnet') or '—' }}</code>
+        <span class="vlan-pied">
+          <span>{{ v.ips|length }} adresses</span>
+          {% if v.get('dhcp') %}<span class="badge badge-neutre">DHCP</span>{% endif %}
+          {% if v.sel('zone') %}<span class="badge badge-role">{{ v.sel('zone') }}</span>{% endif %}
+        </span>
+        {% if v.network and v.network.prefixlen == 24 %}
+        <span class="vlan-jauge" title="{{ v.ips|length }} adresses documentées sur 254">
+          <i style="width:{{ (100 * v.ips|length / 254)|round(1) }}%"></i>
+        </span>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if orphans %}
+  <section class="bloc">
+    <h2>Adresses hors VLAN connu <span class="compte">{{ orphans|length }}</span>
+      {% call m.aide("Adresses hors VLAN") %}
+        <p>Aucun sous-réseau déclaré dans la table VLAN ne contient ces adresses. Soit le
+          VLAN manque à l'inventaire, soit l'adresse est erronée.</p>
+      {% endcall %}
+    </h2>
+    {{ l.table_ips(orphans) }}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

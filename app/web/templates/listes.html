@@ -1,0 +1,147 @@
+{#
+  Tableaux par type d'objet. Une file du tableau de bord peut contenir n'importe lequel
+  des six types : plutôt qu'un tableau générique qui n'afficherait que le nom, chaque type
+  a ses colonnes utiles — sans quoi une file « conteneurs arrêtés » ne dirait pas sur quel
+  hôte aller regarder.
+#}
+{% import "macros.html" as m with context %}
+
+{% macro liste(objs) %}
+  {% if not objs %}
+    <p class="rien">Rien dans cette file. C'est la bonne nouvelle du jour.</p>
+  {% else %}
+    {% set kind = objs[0].kind %}
+    {% if kind == 'node' %}{{ table_noeuds(objs) }}
+    {% elif kind == 'container' %}{{ table_conteneurs(objs) }}
+    {% elif kind == 'image' %}{{ table_images(objs) }}
+    {% elif kind == 'ipam' %}{{ table_ips(objs) }}
+    {% elif kind == 'application' %}{{ table_apps(objs) }}
+    {% else %}
+      <ul class="liste-simple">{% for o in objs %}<li>{{ m.lien(o) }}</li>{% endfor %}</ul>
+    {% endif %}
+  {% endif %}
+{% endmacro %}
+
+{% macro table_noeuds(objs) %}
+<div class="tbl-scroll"><table class="tbl">
+  <thead><tr>
+    <th>Nœud</th><th>Type</th><th>Hôte parent</th>
+    <th class="num">vCPU</th><th class="num">RAM</th><th>Sauvegarde</th><th>Adresses</th><th>Rôles</th>
+  </tr></thead>
+  <tbody>
+  {% for n in objs %}
+  <tr>
+    <td>{{ m.lien(n) }}</td>
+    <td>{{ m.badge(n.sel('Type') or '—') }}</td>
+    <td>{% if n.parent %}{{ m.lien_ref(n.parent) }}{% else %}<span class="vide">racine</span>{% endif %}</td>
+    <td class="num">{{ n.get('vCPU') or '' }}</td>
+    <td class="num">{{ n.get('RAM_Gb') or '' }}{% if n.get('RAM_Gb') %} <span class="unite">Go</span>{% endif %}</td>
+    <td>{% if n.is_manual %}<span class="vide" title="le collecteur ne calcule la sauvegarde que pour les guests Proxmox">non suivi</span>
+        {% elif n.get('Backup') %}<span class="bool bool-oui">oui</span>
+        {% else %}<span class="bool bool-non">non</span>{% endif %}</td>
+    <td>{{ m.liens(n.ips, vide='aucune') }}</td>
+    <td class="roles">{% for r in n.multi('Roles') %}{{ m.badge(r) }}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}
+
+{% macro table_conteneurs(objs) %}
+<div class="tbl-scroll"><table class="tbl">
+  <thead><tr>
+    <th>Conteneur</th><th>Hôte</th><th>Stack</th><th>Application</th>
+    <th>Image</th><th>CVE C/H</th><th>Redémarrage</th>
+  </tr></thead>
+  <tbody>
+  {% for c in objs %}
+  <tr>
+    <td>{{ m.lien(c) }}</td>
+    <td>{% if c.host %}{{ m.lien_ref(c.host) }}{% else %}<span class="vide">—</span>{% endif %}</td>
+    <td>{% if c.stack %}{{ m.stack_ref(c.stack) }}
+        {% else %}<span class="vide" title="lancé hors de tout fichier Compose : non redéployable à l'identique">hors stack</span>{% endif %}</td>
+    <td>{{ m.liens(c.apps, vide='non rattaché') }}</td>
+    <td>{% if c.image %}{{ m.lien_ref(c.image) }}{% else %}<span class="vide">—</span>{% endif %}</td>
+    <td class="num">{% if c.image %}{{ m.cve(c.image) }}{% endif %}</td>
+    <td>{{ c.sel('Restart_policy') or '' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}
+
+{% macro table_images(objs) %}
+<div class="tbl-scroll"><table class="tbl">
+  <thead><tr>
+    <th>Image</th><th>Tag</th><th class="num">CVE C/H</th><th>Version disponible</th>
+    <th>Dernier scan</th><th>Stacks</th><th>Applications</th>
+  </tr></thead>
+  <tbody>
+  {% for i in objs %}
+  <tr>
+    <td>{{ m.lien(i) }}</td>
+    <td>{% if i.get('Tag') %}<code>{{ i.get('Tag') }}</code>{% endif %}</td>
+    <td class="num">{{ m.cve(i) }}</td>
+    <td>{% if i.get('Update_available') %}
+          {% if i.get('Available_version') %}<span class="maj">→ {{ i.get('Available_version') }}</span>
+          {% else %}<span class="maj" title="Cup a détecté une image plus récente sans pouvoir nommer sa version (comparaison par empreinte)">mise à jour, version inconnue</span>{% endif %}
+        {% else %}<span class="vide">à jour</span>{% endif %}</td>
+    <td>{{ i.get('Last_scan') or '' }}{% if not i.get('Last_scan') %}<span class="vide">jamais</span>{% endif %}</td>
+    <td>{% set stacks = i.containers|map(attribute='stack')|select|unique(attribute='key')|list %}
+        {% if stacks %}{{ m.liens_stacks(stacks) }}{% else %}<span class="vide">hors stack</span>{% endif %}</td>
+    <td>
+      {% set apps = [] %}
+      {% for c in i.containers %}{% for a in c.apps %}{% if a not in apps %}{% if apps.append(a) %}{% endif %}{% endif %}{% endfor %}{% endfor %}
+      {{ m.liens(apps, vide='—') }}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}
+
+{% macro table_ips(objs) %}
+<div class="tbl-scroll"><table class="tbl">
+  <thead><tr>
+    <th>Adresse</th><th>VLAN</th><th>Hostname</th><th>MAC</th><th>Constructeur</th>
+    <th>Type</th><th>Statut</th><th>Nœud</th><th>Vue</th>
+  </tr></thead>
+  <tbody>
+  {% for ip in objs %}
+  <tr>
+    <td>{{ m.lien(ip) }}</td>
+    <td>{% if ip.vlan %}<a href="{{ ip.vlan.url }}">{{ ip.vlan.name }}</a>{% else %}<span class="vide">hors VLAN connu</span>{% endif %}</td>
+    <td>{{ ip.get('Hostname') or '' }}</td>
+    <td><code>{{ ip.get('MAC') or '' }}</code></td>
+    <td>{{ ip.get('Vendor') or '' }}</td>
+    <td>{{ ip.sel('Type') or '' }}</td>
+    <td>{{ m.badge(ip.sel('Status'), 'warn' if ip.sel('Status') == 'To check' else 'neutre') }}</td>
+    <td>{% if ip.node %}{{ m.lien_ref(ip.node) }}{% else %}<span class="vide">—</span>{% endif %}</td>
+    <td>{{ ip.dt('Last_seen')|ago }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}
+
+{% macro table_apps(objs) %}
+<div class="tbl-scroll"><table class="tbl">
+  <thead><tr>
+    <th>Application</th><th>Statut</th><th>Criticité</th><th class="num">Conteneurs</th>
+    <th class="num">CVE C/H</th><th>Hôtes</th><th>Accès</th>
+  </tr></thead>
+  <tbody>
+  {% for a in objs %}
+  <tr>
+    <td><span class="app-cellule">{{ m.appicon(a) }}{{ m.lien(a) }}</span></td>
+    <td>{{ m.badge(a.sel('Status') or '—', 'ok' if a.sel('Status') == 'Prod' else 'neutre') }}</td>
+    <td>{{ m.badge(a.sel('Criticality') or '—', 'crit' if a.sel('Criticality') == 'High' else 'neutre') }}</td>
+    <td class="num">{{ a.containers|length }}</td>
+    <td class="num"><span class="cve"><b class="{{ 'cve-crit' if a.cve_critical else 'cve-zero' }}">{{ a.cve_critical }}</b><i>/</i><span class="{{ 'cve-high' if a.cve_high else 'cve-zero' }}">{{ a.cve_high }}</span></span></td>
+    <td>{{ m.chaines_inline(a.hosts, vide='—') }}</td>
+    <td>{% if a.get('URL') %}<a href="{{ a.get('URL') }}" target="_blank" rel="noreferrer noopener">ouvrir</a>{% else %}<span class="vide">—</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}

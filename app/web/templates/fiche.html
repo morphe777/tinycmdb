@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}{{ obj.name }}{% endblock %}
+
+{% set libelles = {'node': 'Nœud', 'container': 'Conteneur', 'image': 'Image',
+                   'ipam': 'Adresse', 'application': 'Application', 'vlan': 'VLAN'} %}
+
+{#
+  Une ligne de liens n'est rendue que si elle a quelque chose à dire. Afficher
+  « Conteneurs : aucun » occupe une ligne pour ne rien apprendre ; l'absence d'une
+  ligne se lit aussi bien que sa présence, et laisse la place aux informations utiles.
+#}
+{% macro rel(titre, contenu) %}
+{%- if contenu and contenu|trim %}<tr><th>{{ titre }}</th><td>{{ contenu }}</td></tr>{% endif -%}
+{% endmacro %}
+
+{% block contenu %}
+<div class="page">
+  <p class="fil">{{ libelles[obj.kind] }}</p>
+  <h1>{% if obj.kind == 'application' %}{{ m.appicon(obj) }}{% else %}{{ m.nature(obj) }}{% endif %}{{ obj.name }}</h1>
+  {{ m.compte_rendu(enregistres, cree) }}
+
+  {# En modification, la fiche passe sur une colonne : le formulaire occupe la page, et le
+     bloc Liens le suit au lieu de lui disputer la moitié de la largeur. #}
+  <div class="deux-colonnes{{ ' une-colonne' if edition }}">
+    <section class="bloc">
+      <h2>{{ "Modification" if edition else "Champs" }}
+        {{ m.bouton_modifier(obj, champs) if not edition }}
+        {% call m.aide("Provenance des champs") %}
+          <p>Chaque champ porte son origine, car tous ne se comportent pas de la même
+            façon face au collecteur.</p>
+          <p><b>auto</b> — réécrit à chaque passage du collecteur. Une valeur saisie à la
+            main dans un champ de ce type disparaît au passage suivant, sans avertissement
+            ni trace.</p>
+          <p><b>enrichi</b> — recalculé par le collecteur même sur une ligne saisie à la
+            main. Cela ne concerne aujourd'hui que les adresses IP : l'adresse, l'adresse
+            MAC et le nœud sont saisis, le VLAN, le constructeur, le nom DNS et le FQDN en
+            sont déduits.</p>
+          <p><b>manuel</b> — le collecteur n'y touche dans aucun cas. Ces champs ne
+            dépendent que de la saisie, et ce sont les seuls que cette console permet de
+            modifier : ouvrir les autres à l'édition reviendrait à proposer une saisie
+            dont la disparition est programmée.</p>
+          <p>Les options proposées dans les listes sont celles déjà employées dans la
+            base. Créer une option, ajouter un champ ou supprimer une ligne relève du
+            schéma, et reste du ressort de Baserow.</p>
+          {% if obj.kind == 'node' and obj.is_manual %}
+          <p>Cette ligne étant saisie à la main, elle est protégée dans son intégralité :
+            le collecteur ne la met pas à jour et ne la supprimera jamais.</p>
+          {% elif obj.kind == 'application' %}
+          <p>La table Application n'est jamais écrite par le collecteur : une application
+            est un regroupement décidé, pas un fait technique observable.</p>
+          {% endif %}
+        {% endcall %}
+      </h2>
+      {% if edition %}
+      {#
+        Seuls les champs modifiables sont présentés. Les afficher tous, dont les quinze
+        que le collecteur réécrit, donnerait un formulaire où l'essentiel du contenu est
+        grisé — et ferait chercher longtemps pourquoi tel champ ne s'ouvre pas. Le retour
+        à la fiche complète est à un clic.
+      #}
+      {{ m.edition(obj, champs, erreur) }}
+      {% else %}
+      <table class="fiche">
+        {% for r in rows %}
+        <tr class="origine-ligne-{{ r.origin }}">
+          <th>{{ r.field }}</th>
+          <td>{{ m.valeur(r, obj) }}</td>
+          {% if not origine_commune %}<td class="col-origine">{{ m.origine(r.origin) }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+    </section>
+
+    <section class="bloc">
+      <h2>Liens</h2>
+      <table class="fiche">
+        {% if obj.kind == 'node' %}
+          {{ rel("Hôte parent", m.chaine(obj.parent) if obj.parent) }}
+          {{ rel("Invités", m.liens(obj.children) if obj.children) }}
+          {{ rel("Adresses", m.liens(obj.ips) if obj.ips) }}
+          {% set stacks = obj.containers|map(attribute='stack')|select|unique(attribute='key')|list %}
+          {{ rel("Stacks hébergées", m.liens_stacks(stacks) if stacks) }}
+          {{ rel("Applications", m.liens(obj.apps) if obj.apps) }}
+
+        {% elif obj.kind == 'container' %}
+          {{ rel("Où ça tourne", m.chaine(obj.host) if obj.host) }}
+          {{ rel("Stack", m.stack_lien(obj.stack) if obj.stack) }}
+          {{ rel("Image", m.lien(obj.image) if obj.image) }}
+          {{ rel("Application", m.liens(obj.apps) if obj.apps) }}
+          {{ rel("Vulnérabilités de l'image", m.cve(obj.image) if obj.image) }}
+
+        {% elif obj.kind == 'image' %}
+          {% set hotes = obj.containers|map(attribute='host')|select|unique(attribute='id')|list %}
+          {% set stacks = obj.containers|map(attribute='stack')|select|unique(attribute='key')|list %}
+          {% set apps = [] %}
+          {% for c in obj.containers %}{% for a in c.apps %}{% if a not in apps %}{% if apps.append(a) %}{% endif %}{% endif %}{% endfor %}{% endfor %}
+          {{ rel("Où elle tourne", m.chaines(hotes) if hotes) }}
+          {{ rel("Stacks", m.liens_stacks(stacks) if stacks) }}
+          {{ rel("Conteneurs", m.liens(obj.containers) if obj.containers) }}
+          {{ rel("Applications", m.liens(apps) if apps) }}
+          {% if obj.containers and not apps and (obj.num('CVE_critical') or 0) > 0 %}
+          <tr><th>Applications</th><td><span class="alerte-inline">aucune — l'impact métier de
+            ces vulnérabilités ne peut pas être établi</span></td></tr>
+          {% endif %}
+
+        {% elif obj.kind == 'ipam' %}
+          {{ rel("Nœud", m.chaine(obj.node) if obj.node) }}
+          {{ rel("VLAN", m.lien_vlan(obj.vlan) if obj.vlan) }}
+
+        {% elif obj.kind == 'application' %}
+          {{ rel("Où ça tourne", m.chaines(obj.hosts) if obj.hosts) }}
+          {{ rel("Stacks", m.liens_stacks(obj.stacks) if obj.stacks) }}
+          {{ rel("Conteneurs", m.liens_conteneurs(obj.containers) if obj.containers) }}
+          {{ rel("Vulnérabilités cumulées", m.cve_cumul(obj) if obj.images) }}
+        {% endif %}
+      </table>
+    </section>
+  </div>
+
+  {% if obj.kind == 'node' and obj.containers %}
+  <section class="bloc">
+    <h2>Conteneurs hébergés <span class="compte">{{ obj.containers|length }}</span></h2>
+    {{ l.table_conteneurs(obj.containers) }}
+  </section>
+  {% endif %}
+
+  {% if obj.kind == 'application' and obj.images %}
+  <section class="bloc">
+    <h2>Images portées <span class="compte">{{ obj.images|length }}</span></h2>
+    {{ l.table_images(obj.images) }}
+  </section>
+  {% endif %}
+
+  {% if obj.kind == 'image' and obj.containers %}
+  <section class="bloc">
+    <h2>Où elle tourne <span class="compte">{{ obj.containers|length }}</span></h2>
+    {{ l.table_conteneurs(obj.containers) }}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

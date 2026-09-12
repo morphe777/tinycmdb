@@ -1,0 +1,16 @@
+# Secrets : BASEROW_TOKEN, PROXMOX_TOKEN, WEB_BASEROW_TOKEN. `.env.example` documente les
+# clés attendues et se versionne, lui.
+.env
+
+# Base de vulnérabilités Trivy : ~1 Go, retéléchargeable, et située dans le répertoire du
+# projet parce que le conteneur la monte depuis là. Sans cette ligne, le premier
+# `git add .` embarque un gigaoctet de binaire dans l'historique — irréversible.
+trivy-cache/
+
+# Surcharge locale de compose : c'est là que vit le montage du code en lecture seule pour
+# le développement. Propre à chaque poste, jamais partagée.
+compose.override.yaml
+
+__pycache__/
+*.pyc
+.venv/

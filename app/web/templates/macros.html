@@ -1,0 +1,429 @@
+{#
+  Fragments réutilisés partout.
+
+  Le marqueur d'état se place à gauche du nom, à la place de la pastille : tous les états
+  se lisent alors dans une seule colonne, du haut en bas de l'écran, au lieu de flotter
+  après un nombre variable d'étiquettes. Les étiquettes restent des étiquettes.
+
+  La provenance passe après le nom : elle reste visible, mais elle ne dispute plus la
+  colonne de gauche à l'information la plus regardée.
+#}
+
+{% macro etat(obj) -%}
+{%- set e = obj.etat if obj.kind == 'stack' else
+      ('perdu' if obj.perdu else
+       {'Running': 'ok', 'Exited': 'ko', 'Restarting': 'ko',
+        'Stopped': 'arret', 'Paused': 'arret'}.get(obj.sel('Status'))) -%}
+{%- if e == 'ok' -%}
+<span class="etat etat-ok" title="en marche"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5"/></svg></span>
+{%- elif e == 'ko' -%}
+<span class="etat etat-crit" title="en défaut"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></span>
+{%- elif e == 'arret' -%}
+<span class="etat etat-warn" title="arrêté"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"/></svg></span>
+{%- elif e == 'perdu' -%}
+<span class="etat etat-perdu" title="plus vu par le collecteur — état inconnu, suppression en attente"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" stroke-dasharray="2.2 2"/></svg></span>
+{%- else -%}
+<span class="etat etat-vide" aria-hidden="true"></span>
+{%- endif -%}
+{%- endmacro %}
+
+{#
+  La provenance ne figure plus dans les listes. Elle ne se pose pas au niveau de l'objet
+  mais du champ : ce qui compte n'est pas « cette ligne est manuelle » mais « cette
+  valeur-là survivra-t-elle au prochain passage ». La réponse est sur la fiche, champ par
+  champ, là où on s'apprête à modifier quelque chose.
+#}
+
+{#
+  Pictogramme de nature. Il répond à « qu'est-ce que c'est » d'un coup d'œil, là où le
+  marqueur d'état répond à « est-ce que ça va ». Les deux ne servent pas au même endroit :
+  l'état sur la ligne d'un objet listé pour lui-même, la nature sur une référence vers un
+  autre objet.
+#}
+{% macro nature(obj) -%}
+{%- set t = obj.sel('Type') if obj.kind == 'node' else obj.kind -%}
+{%- if obj.kind == 'stack' -%}
+<span class="nat" title="stack"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5.5h11M2.5 8.5h11M2.5 11.5h11"/></svg></span>
+{%- elif obj.kind == 'container' -%}
+<span class="nat" title="conteneur"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="4.5" width="11" height="8" rx="1.5"/><path d="M5.5 4.5v8M9 4.5v8"/></svg></span>
+{%- elif t in ('VM', 'LXC') -%}
+<span class="nat" title="machine virtuelle"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3.5" width="12" height="8" rx="1.5"/><path d="M6 13.5h4"/></svg></span>
+{%- elif t == 'Physical' -%}
+<span class="nat" title="serveur physique"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="4.5" rx="1"/><rect x="2.5" y="9" width="11" height="4.5" rx="1"/><path d="M5 5.2h.01M5 11.2h.01"/></svg></span>
+{%- elif obj.kind == 'image' -%}
+<span class="nat" title="image"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l5.2 2.9v5.8L8 13.8 2.8 10.9V5.1z"/></svg></span>
+{%- elif obj.kind == 'application' -%}
+<span class="nat" title="application"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/></svg></span>
+{%- elif t -%}
+<span class="nat" title="{{ t }}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2.5"/></svg></span>
+{%- else -%}
+<span class="nat nat-vide" aria-hidden="true"></span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro lien(obj) -%}
+<a class="objlink" href="{{ obj.url }}">{{ etat(obj) }}<span class="objnom">{{ obj.name }}</span></a>
+{%- endmacro %}
+
+{#
+  Référence vers un autre objet, par opposition à l'objet listé pour lui-même.
+
+  Elle porte sa nature, pas son état : répéter « en marche » sur chaque hôte cité dans
+  chaque ligne d'un tableau sature l'écran de coches vertes qui finissent par ne plus rien
+  vouloir dire. L'état d'un hôte se lit sur sa propre ligne, là où on le cherche.
+#}
+{% macro lien_ref(obj) -%}
+<a class="objlink" href="{{ obj.url }}">{{ nature(obj) }}<span class="objnom">{{ obj.name }}</span></a>
+{%- endmacro %}
+
+{% macro liens(objs, vide='—') -%}
+{%- if objs -%}
+<span class="objlinks">{% for o in objs %}{{ lien_ref(o) }}{% endfor %}</span>
+{%- else -%}<span class="vide">{{ vide }}</span>{%- endif -%}
+{%- endmacro %}
+
+{#
+  Un nœud suivi de son hôte parent. Un conteneur tourne sur `myTools`, mais `myTools` est
+  une VM sur `Biggy` : sans le deuxième maillon, on ne sait pas quelle machine réelle
+  tombe si elle tombe.
+#}
+{% macro chaine(n) -%}
+{{ lien_ref(n) }}{% if n.parent %}<span class="chaine-sur">sur</span>{{ lien_ref(n.parent) }}{% endif %}
+{%- endmacro %}
+
+{# Un hôte par ligne : alignées les unes derrière les autres, les chaînes
+   « machine sur machine » se confondent dès qu'il y en a plus de deux. #}
+{% macro chaines_inline(objs, vide='—') -%}
+{%- if objs -%}
+{%- for n in objs %}<span class="chaine">{{ chaine(n) }}</span>{% endfor -%}
+{%- else -%}<span class="vide">{{ vide }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro chaines(objs, vide='—') -%}
+{%- if objs -%}
+<span class="chaines">{% for n in objs %}<span class="chaine">{{ chaine(n) }}</span>{% endfor %}</span>
+{%- else -%}<span class="vide">{{ vide }}</span>{%- endif -%}
+{%- endmacro %}
+
+{#
+  Icône d'application, essayée en cascade par le NAVIGATEUR : l'icône découverte dans le
+  HTML d'abord, puis les emplacements conventionnels. La distinction compte — le poste qui
+  affiche la page a des droits que ce service n'a pas : un reverse proxy filtrant par IP
+  source répond 403 à la console et sert la vraie page au navigateur.
+
+  Quand tous les candidats échouent, l'image se retire et laisse l'initiale dessous.
+#}
+{% macro appicon(app) -%}
+<span class="appicon" aria-hidden="true">{{ app.initiale }}
+  {%- if app.favicon_candidats %}<img src="{{ app.favicon_candidats[0] }}" alt="" loading="lazy"
+    referrerpolicy="no-referrer"
+    data-suite="{{ app.favicon_candidats[1:]|join(' ') }}"
+    onerror="cascadeIcone(this)">{% endif -%}
+</span>
+{%- endmacro %}
+
+{#
+  Aide contextuelle d'un cadre. Bâtie sur <details> : elle fonctionne sans JavaScript, se
+  ferme au clic extérieur ou à Échap quand il est disponible (voir base.html), et sort le
+  texte explicatif de l'écran tant qu'on ne le demande pas.
+
+  Usage : {% call m.aide("Titre") %}<p>…</p>{% endcall %}
+#}
+{% macro aide(titre) -%}
+<details class="aide">
+  <summary title="{{ titre }} — aide"><span aria-hidden="true">i</span><span class="lecteur-ecran">Aide : {{ titre }}</span></summary>
+  <div class="aide-panneau" role="note">
+    <b>{{ titre }}</b>
+    {{ caller() }}
+  </div>
+</details>
+{%- endmacro %}
+
+{# La stack listée pour elle-même : état à gauche, comme tout objet principal. #}
+{% macro stack_lien(s) -%}
+<a class="objlink" href="{{ s.url }}">{{ etat(s) }}{{ nature(s) }}<span class="objnom">{{ s.name }}</span></a>
+{%- endmacro %}
+
+{# La stack citée en référence : nature seulement. #}
+{% macro stack_ref(s) -%}
+<a class="objlink" href="{{ s.url }}">{{ nature(s) }}<span class="objnom">{{ s.name }}</span></a>
+{%- endmacro %}
+
+{#
+  Conteneurs annotés de leur stack. Trois conteneurs peuvent porter le même nom sur trois
+  hôtes — c'est leur stack qui les distingue, pas leur nom.
+#}
+{% macro liens_conteneurs(containers) -%}
+<span class="chaines">
+{%- for c in containers %}<span class="conteneur-stack">{{ lien_ref(c) }}{% if c.stack %}<span
+  class="chaine-sur">dans</span>{{ stack_ref(c.stack) }}{% endif %}</span>{% endfor -%}
+</span>
+{%- endmacro %}
+
+{% macro liens_stacks(stacks) -%}
+<span class="chaines">{% for s in stacks %}<span>{{ stack_ref(s) }}</span>{% endfor %}</span>
+{%- endmacro %}
+
+{% macro lien_vlan(v) -%}
+<a href="{{ v.url }}">{{ v.name }}</a> <span class="vide">{{ v.get('subnet') }}</span>
+{%- endmacro %}
+
+{% macro cve_cumul(o) -%}
+<span class="cve"><b class="{{ 'cve-crit' if o.cve_critical else 'cve-zero' }}">{{ o.cve_critical }}</b><i>/</i><span
+  class="{{ 'cve-high' if o.cve_high else 'cve-zero' }}">{{ o.cve_high }}</span></span>
+<span class="vide">sur {{ o.images|length }} image{{ 's' if o.images|length > 1 }}</span>
+{%- endmacro %}
+
+{% macro badge(texte, ton='neutre') -%}
+<span class="badge badge-{{ ton }}">{{ texte }}</span>
+{%- endmacro %}
+
+{#
+  Étiquette d'une liste déroulante, à la couleur choisie dans Baserow. Reprendre ce
+  réglage plutôt que d'inventer une palette évite deux codes couleur concurrents pour la
+  même donnée — et il se met à jour tout seul quand la couleur change dans la base.
+#}
+{% macro badge_option(libelle, teinte) -%}
+{%- if teinte %}<span class="badge badge-teinte" style="--teinte: {{ teinte }}">{{ libelle }}</span>
+{%- else %}<span class="badge badge-neutre">{{ libelle }}</span>{% endif -%}
+{%- endmacro %}
+
+
+
+{% macro origine(o) -%}
+<span class="origine origine-{{ o }}" title="{{ ORIGIN_LABELS[o] }}">{{ ORIGIN_SHORT[o] }}</span>
+{%- endmacro %}
+
+{% macro cve(image) -%}
+{%- set c = image.num('CVE_critical') -%}
+{%- set h = image.num('CVE_high') -%}
+{%- if image.get('Last_scan') -%}
+<span class="cve"><b class="{{ 'cve-crit' if c else 'cve-zero' }}">{{ c or 0 }}</b><i>/</i><span
+  class="{{ 'cve-high' if h else 'cve-zero' }}">{{ h or 0 }}</span></span>
+{%- else -%}
+<span class="vide" title="jamais analysée par Trivy">non analysée</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro compteur(valeur, libelle, ton='neutre') -%}
+<div class="compteur compteur-{{ ton }}">
+  <b>{{ valeur|milliers }}</b><span>{{ libelle }}</span>
+</div>
+{%- endmacro %}
+
+{#
+  Rend un champ de fiche selon son mode. Le mode est déclaré dans main.py (FICHE_FIELDS)
+  plutôt que deviné ici : un champ vide doit rester reconnaissable comme champ de son type.
+#}
+{% macro valeur(row, obj) -%}
+{%- set v = row.value -%}
+{%- set mode = row.mode -%}
+{%- if mode == 'bool' -%}
+  {%- if v %}<span class="bool bool-oui">oui</span>{% else %}<span class="bool bool-non">non</span>{% endif -%}
+{%- elif v is none or v == '' -%}
+  <span class="vide">—</span>
+{%- elif mode == 'select' -%}
+  {{ badge_option(obj.sel(row.field), obj.sel_couleur(row.field)) }}
+{%- elif mode == 'multi' -%}
+  {%- for x, teinte in obj.multi_colore(row.field) %}{{ badge_option(x, teinte) }}
+  {%- else %}<span class="vide">—</span>{% endfor -%}
+{%- elif mode == 'datetime' -%}
+  <span title="{{ obj.dt(row.field)|datefr }}">{{ obj.dt(row.field)|ago }}</span>
+{%- elif mode == 'date' -%}
+  {{ v }}
+{%- elif mode == 'url' -%}
+  <a href="{{ v }}" rel="noreferrer noopener" target="_blank">{{ v }}</a>
+{%- elif mode == 'mono' -%}
+  <code>{{ v }}</code>
+{%- elif mode == 'long' -%}
+  <span class="long">{{ v }}</span>
+{%- elif mode.startswith('unit:') -%}
+  {{ v }} <span class="unite">{{ mode[5:] }}</span>
+{%- else -%}
+  {{ v }}
+{%- endif -%}
+{%- endmacro %}
+
+{#
+  ---------------------------------------------------------------------------- saisie
+
+  Un champ de formulaire, quel que soit son type. Partagé par la modification d'une fiche
+  et par les formulaires de création : le rendu d'un champ ne dépend que du champ.
+#}
+{% macro champ_saisie(c) -%}
+{% set nom = 'champ.' ~ c.champ %}
+{% set cid = 'f-' ~ c.champ|replace(' ', '-') %}
+{# Déclare au serveur les champs que ce formulaire porte : une case décochée et un champ
+   absent de la requête sont sans cela indiscernables. #}
+<input type="hidden" name="soumis" value="{{ c.champ }}">
+<div class="champ{{ ' champ-large' if c.widget == 'long' }}">
+  <label for="{{ cid }}">{{ c.libelle }}</label>
+
+  {% if c.widget == 'long' %}
+    <textarea id="{{ cid }}" name="{{ nom }}" rows="4">{{ c.valeur or '' }}</textarea>
+
+  {% elif c.widget == 'entier' %}
+    <input id="{{ cid }}" name="{{ nom }}" type="number" min="0" step="1"
+           inputmode="numeric" value="{{ c.valeur if c.valeur is not none else '' }}">
+
+  {% elif c.widget == 'url' %}
+    <input id="{{ cid }}" name="{{ nom }}" type="url" placeholder="https://…"
+           value="{{ c.valeur or '' }}">
+
+  {% elif c.widget == 'ip' %}
+    <input id="{{ cid }}" name="{{ nom }}" type="text" inputmode="decimal"
+           placeholder="192.168.0.1" value="{{ c.valeur or '' }}" spellcheck="false">
+
+  {% elif c.widget == 'bool' %}
+    <label class="bascule"><input id="{{ cid }}" name="{{ nom }}" type="checkbox"
+           {% if c.valeur %}checked{% endif %}> oui</label>
+
+  {% elif c.widget == 'select' %}
+    {% if c.options %}
+    <select id="{{ cid }}" name="{{ nom }}">
+      <option value="">— non renseigné —</option>
+      {% for o in c.options %}
+      <option value="{{ o }}" {% if o == c.valeur %}selected{% endif %}>{{ o }}</option>
+      {% endfor %}
+    </select>
+    {% else %}
+    <p class="rien-champ">Aucune option employée dans la base pour ce champ.</p>
+    {% endif %}
+
+  {% elif c.widget == 'multi' or c.widget.startswith('lien:') %}
+    {{ combo(c, nom, cid) }}
+
+  {% else %}
+    <input id="{{ cid }}" name="{{ nom }}" type="text" value="{{ c.valeur or '' }}"
+           maxlength="255">
+  {% endif %}
+
+  {% if c.notice %}<small class="notice">{{ c.notice }}</small>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{#
+  Sélecteur multiple : un bouton qui résume la sélection, et un panneau contenant un champ
+  de filtre puis la liste complète.
+
+  Le panneau est écrit ouvert et le bouton masqué ; c'est le script qui inverse les deux à
+  l'initialisation. Sans JavaScript, il reste donc une liste de cases à cocher qui
+  fonctionne — la console entière tient sans script, et un formulaire n'est pas l'endroit
+  où commencer à en dépendre.
+
+  Le libellé est répété en attribut : le filtre compare sur `data-libelle`, sans avoir à
+  descendre dans le texte du nœud ni à se soucier de l'espace autour.
+#}
+{% macro combo(c, nom, cid) -%}
+<div class="combo" data-combo>
+  <button type="button" class="combo-declencheur" id="{{ cid }}" aria-expanded="false" hidden>
+    <span class="combo-resume"
+          data-vide="{{ 'Aucun rattachement' if c.widget.startswith('lien:') else 'Aucune option' }}"></span>
+    <svg class="combo-fleche" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+  <div class="combo-panneau">
+    <input type="text" class="combo-filtre" placeholder="Filtrer…" autocomplete="off"
+           aria-label="Filtrer la liste" hidden>
+    <div class="choix">
+      {% if c.widget == 'multi' %}
+        {% for o in c.options %}
+        <label data-libelle="{{ o }}"><input type="checkbox" name="{{ nom }}" value="{{ o }}"
+               {% if o in c.valeur %}checked{% endif %}><span>{{ o }}</span></label>
+        {% else %}
+        <p class="rien-champ">Aucune option employée dans la base pour ce champ.</p>
+        {% endfor %}
+      {% else %}
+        {% for cible in c.cibles %}
+        <label data-libelle="{{ cible.name }}"><input type="checkbox" name="{{ nom }}"
+               value="{{ cible.id }}" {% if cible.id in c.valeur %}checked{% endif %}><span>{{ cible.name }}</span></label>
+        {% else %}
+        <p class="rien-champ">Aucun objet à rattacher.</p>
+        {% endfor %}
+      {% endif %}
+    </div>
+    <p class="combo-rien" hidden>Aucun résultat pour ce filtre.</p>
+  </div>
+</div>
+{%- endmacro %}
+
+
+{#
+  Formulaire de modification d'une fiche. Les champs affichés sont ceux que
+  `ecriture.formulaire()` a retenus ; le gabarit ne décide de rien, il rend.
+
+  Une seule soumission plutôt qu'une édition champ par champ en arrière-plan : la console
+  est servie par un code monté en lecture seule qu'on redémarre à la main, et une base où
+  l'on corrige trois notes par mois n'a pas de quoi amortir dix fois plus de points de
+  défaillance.
+#}
+{% macro edition(obj, champs, erreur) -%}
+<form class="edition" method="post" action="/modifier/{{ obj.url.split('/')[1] }}/{{ obj.id }}">
+  {% if erreur %}
+  <p class="alerte-form" role="alert"><b>Enregistrement refusé.</b> {{ erreur }}</p>
+  {% endif %}
+  {% for c in champs %}{{ champ_saisie(c) }}{% endfor %}
+  <div class="barre-form">
+    <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
+    <a class="bouton" href="{{ obj.url }}">Annuler</a>
+  </div>
+</form>
+{%- endmacro %}
+
+
+{#
+  Formulaire de création, présenté en fenêtre.
+
+  `<dialog>` natif, sans bibliothèque. Écrit avec l'attribut `open` par le serveur, il
+  s'affiche dans le flux de la page : la création reste donc accessible par simple lien,
+  sans script — c'est ce qui permet à une case libre de la grille IPAM d'être un vrai lien,
+  partageable et rechargeable, plutôt qu'un gestionnaire de clic. Le script, lorsqu'il
+  s'exécute, intercepte ce lien et ouvre la même fenêtre en modale.
+#}
+{% macro creation(id, titre, action, champs, ouverte, erreur, retour, caches={}) -%}
+<dialog class="dialogue" id="{{ id }}" {% if ouverte %}open{% endif %}>
+  <form class="edition" method="post" action="{{ action }}">
+    <header class="dialogue-tete">
+      <h2>{{ titre }}</h2>
+      <a class="dialogue-fermer" href="{{ retour }}" aria-label="Fermer" data-fermer>×</a>
+    </header>
+    {% if erreur %}
+    <p class="alerte-form" role="alert"><b>Création refusée.</b> {{ erreur }}</p>
+    {% endif %}
+    {% for clef, valeur in caches.items() %}
+    <input type="hidden" name="{{ clef }}" value="{{ valeur }}">
+    {% endfor %}
+    {% for c in champs %}{{ champ_saisie(c) }}{% endfor %}
+    <div class="barre-form">
+      <button type="submit" class="bouton bouton-primaire">Créer</button>
+      <a class="bouton" href="{{ retour }}" data-fermer>Annuler</a>
+    </div>
+  </form>
+</dialog>
+{%- endmacro %}
+
+
+{% macro compte_rendu(n, cree=0) -%}
+{%- if cree %}
+<p class="bandeau bandeau-ok">Ligne créée. Les champs déduits de la saisie — VLAN,
+  constructeur, nom DNS — seront complétés au prochain passage du collecteur.</p>
+{%- elif n > 0 %}
+<p class="bandeau bandeau-ok">{{ n }} champ{{ 's' if n > 1 }} enregistré{{ 's' if n > 1 }}.</p>
+{%- elif n == 0 %}
+<p class="bandeau">Aucune modification : les valeurs soumises étaient identiques.</p>
+{%- endif -%}
+{%- endmacro %}
+
+{#
+  Accès à la modification : un crayon de la taille du « i » d'aide, à côté duquel il se
+  range. Un bouton plein à cet endroit pèse plus que le titre qu'il accompagne, alors
+  qu'il ne sert qu'à basculer de mode.
+#}
+{% macro bouton_modifier(obj, champs) -%}
+{%- if champs %}
+<a class="icone-action" href="{{ obj.url }}?edition=1" title="Modifier les champs manuels">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 7.5l3 3"/></svg>
+  <span class="lecteur-ecran">Modifier</span>
+</a>
+{% endif -%}
+{%- endmacro %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}{{ stack.name }}{% endblock %}
+
+{% block contenu %}
+<div class="page">
+  <p class="fil"><a href="/stacks">Stacks</a> › projet Compose</p>
+  <h1><span class="stack-glyphe grand" aria-hidden="true"></span>{{ stack.name }}</h1>
+
+  <div class="deux-colonnes">
+    <section class="bloc">
+      <h2>Déploiement</h2>
+      <table class="fiche">
+        <tr><th>Hôte</th><td>{% if stack.host %}{{ m.chaine(stack.host) }}{% else %}<span class="vide">—</span>{% endif %}</td></tr>
+        <tr><th>Conteneurs</th><td>{{ stack.running }} en marche sur {{ stack.containers|length }}</td></tr>
+        {% if stack.compose_path %}
+        <tr><th>Chemin</th><td><code>{{ stack.compose_path }}</code></td></tr>
+        {% endif %}
+        {% if stack.apps %}
+        <tr><th>Applications</th><td>{{ m.liens(stack.apps) }}</td></tr>
+        {% endif %}
+      </table>
+    </section>
+
+    <section class="bloc">
+      <h2>Exposition
+        {% call m.aide("Exposition de la stack") %}
+          <p>Vulnérabilités cumulées sur les images distinctes de cette stack. Une image
+            utilisée par deux de ses conteneurs n'est comptée qu'une fois.</p>
+          <p>Corriger une stack revient à mettre à jour les images concernées puis à la
+            redéployer entièrement — c'est précisément ce que permet un fichier Compose.</p>
+        {% endcall %}
+      </h2>
+      <div class="compteurs">
+        {{ m.compteur(stack.cve_critical, 'critiques', 'crit') }}
+        {{ m.compteur(stack.cve_high, 'hautes', 'warn') }}
+        {{ m.compteur(stack.updates, 'images à mettre à jour', 'warn') }}
+        {{ m.compteur(stack.images|length, 'images distinctes', 'neutre') }}
+      </div>
+    </section>
+  </div>
+
+  <section class="bloc">
+    <h2>Conteneurs <span class="compte">{{ stack.containers|length }}</span></h2>
+    {{ l.table_conteneurs(stack.containers) }}
+  </section>
+
+  {% if stack.images %}
+  <section class="bloc">
+    <h2>Images <span class="compte">{{ stack.images|length }}</span></h2>
+    {{ l.table_images(stack.images) }}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
