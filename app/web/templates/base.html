@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block titre %}Console CMDB{% endblock %} — CMDB</title>
+<title>{% block titre %}Inventaire{% endblock %} — TinyCMDB</title>
 {# Pas de police ni de feuille de style distante : la console doit rester consultable
    lorsque le lien Internet est coupé — c'est l'un des moments où elle sert. #}
 <link rel="stylesheet" href="/static/console.css?v={{ css_version }}">
@@ -25,7 +25,18 @@
 <body>
 
 <header class="topbar">
-  <a class="marque" href="/">CMDB<span>console</span></a>
+  {# Le logo est écrit ici plutôt que chargé depuis /static : une requête de moins, il
+     hérite du contexte, et surtout la console doit s'afficher entièrement sans dépendre
+     d'un seul actif externe. Même dessin que docs/logo.svg et que le favicon. #}
+  <a class="marque" href="/">
+    <svg class="marque-logo" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="14" fill="#0d6b6b"/>
+      <rect x="13" y="17" width="38" height="7" rx="3.5" fill="#ffffff" opacity=".95"/>
+      <rect x="13" y="28.5" width="38" height="7" rx="3.5" fill="#ffffff" opacity=".5"/>
+      <rect x="13" y="40" width="24" height="7" rx="3.5" fill="#b793d3"/>
+    </svg>
+    Tiny<span>CMDB</span>
+  </a>
   <button class="menu-bascule" type="button" aria-expanded="false"
           aria-controls="menu-principal" aria-label="Menu">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>

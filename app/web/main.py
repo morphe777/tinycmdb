@@ -1,4 +1,4 @@
-"""Console CMDB : service web en lecture seule au-dessus de Baserow.
+"""TinyCMDB — console web au-dessus de Baserow.
 
 Consultation, et modification des seuls champs que le collecteur ne réécrit jamais. La
 liste de ces champs est appliquée côté serveur (`ecriture.py`), pas dans les gabarits :
@@ -40,7 +40,7 @@ if not cfg.BASEROW_VERIFY_TLS:
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-app = FastAPI(title="Console CMDB", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="TinyCMDB", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 data = store.Store(cfg)

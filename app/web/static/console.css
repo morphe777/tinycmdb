@@ -1,4 +1,4 @@
-/* Console CMDB — feuille unique, embarquée, aucune dépendance distante.
+/* TinyCMDB — feuille unique, embarquée, aucune dépendance distante.
    La console doit s'afficher quand le lien Internet est coupé : c'est précisément le
    moment où on la consulte.
 
@@ -115,8 +115,12 @@ code { font-family: var(--mono); font-size: .88em; }
 .marque {
   font-weight: 650; letter-spacing: -.02em; font-size: 16px;
   color: var(--encre); padding: 14px 0; white-space: nowrap;
+  display: flex; align-items: center; gap: 9px;
 }
-.marque span { color: var(--auto); font-weight: 400; margin-left: 5px; }
+/* Un seul mot, deux couleurs : pas d'espace entre les deux moitiés, contrairement à
+   l'ancienne marque en deux mots. */
+.marque span { color: var(--auto); font-weight: 400; }
+.marque-logo { width: 21px; height: 21px; flex: none; border-radius: 5px; }
 .marque:hover { text-decoration: none; }
 .topbar nav { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
 .topbar nav a {

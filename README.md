@@ -6,9 +6,9 @@
 and Docker, scans images for vulnerabilities and pending updates, and a web
 console that tells you, field by field, what it wrote and what you typed.
 
-<br clear="left">
+*Code comments and interface are in French.*
 
-*[Version française](README.fr.md) — the code comments are in French.*
+<br clear="left">
 
 ---
 
