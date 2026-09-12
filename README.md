@@ -191,6 +191,13 @@ button. Only the fields the collector never rewrites are offered. This is
 enforced server-side, so the console cannot promise you an edit that would
 silently vanish on the next pass.
 
+![A node record: every field carries its origin — auto, enriched or manual](docs/screenshot-record.png)
+
+Teal is what the collector owns, purple is yours. On this hypervisor, the roles,
+the criticality and the notes are the only three fields worth typing into — the
+other eleven will be rewritten on the next pass, and the console says so rather
+than letting you find out.
+
 **Declare an application.** *Applications* → *New application*. An application
 is a grouping you decide — it may span several stacks, or a VM with no Docker at
 all. Attaching containers to it is what turns "this image carries 41 critical
