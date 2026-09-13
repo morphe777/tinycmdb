@@ -1,0 +1,101 @@
+# TinyCMDB — pile prête à coller dans Portainer (Stacks → Add stack → Web editor).
+#
+# Trois différences avec compose.yaml, et ce sont elles qui justifient un second fichier :
+#
+#   1. Aucune construction. Portainer n'a pas le dépôt sous la main : `build:` n'aurait
+#      pas de contexte. L'image publiée est tirée telle quelle.
+#   2. Aucun `env_file`. Il n'y a pas de `.env` à côté d'une pile saisie dans un
+#      navigateur. Les variables sont déclarées ici et leurs valeurs viennent du panneau
+#      « Environment variables » de Portainer — ce qui garde les jetons hors du YAML, donc
+#      hors de la vue de qui consulte la pile.
+#   3. Un volume nommé pour le cache Trivy, jamais un chemin relatif : « à côté de la
+#      pile » ne veut rien dire quand la pile est un champ de formulaire.
+#
+# À définir dans Portainer, au minimum : BASEROW_URL, BASEROW_TOKEN, les six TABLE_*, et
+# de quoi collecter — PROXMOX_URL + PROXMOX_TOKEN, ou DOCKER_HOSTS, ou les deux. Tout le
+# reste a une valeur par défaut utilisable.
+
+x-tinycmdb: &tinycmdb
+  image: ghcr.io/morphe777/tinycmdb:0.1.1
+  restart: unless-stopped
+  networks: [tinycmdb]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  environment:
+    # -- Baserow, obligatoire
+    BASEROW_URL: ${BASEROW_URL}
+    BASEROW_TOKEN: ${BASEROW_TOKEN}
+    BASEROW_VERIFY_TLS: ${BASEROW_VERIFY_TLS:-true}
+    TABLE_NODE: ${TABLE_NODE}
+    TABLE_CONTAINER: ${TABLE_CONTAINER}
+    TABLE_IMAGES: ${TABLE_IMAGES}
+    TABLE_IPAM: ${TABLE_IPAM}
+    TABLE_VLAN: ${TABLE_VLAN}
+    TABLE_APPLICATION: ${TABLE_APPLICATION}
+
+    # -- Sources : l'une des deux suffit
+    PROXMOX_URL: ${PROXMOX_URL:-}
+    PROXMOX_TOKEN: ${PROXMOX_TOKEN:-}
+    PROXMOX_VERIFY_TLS: ${PROXMOX_VERIFY_TLS:-true}
+    DOCKER_HOSTS: ${DOCKER_HOSTS:-}
+    DOCKER_SOCKET_PROXY_PORT: ${DOCKER_SOCKET_PROXY_PORT:-2375}
+    DNS_SUFFIX: ${DNS_SUFFIX:-}
+
+    # -- Analyses, désactivées par défaut : Trivy télécharge ~1 Go au premier passage
+    CUP_ENABLED: ${CUP_ENABLED:-false}
+    TRIVY_ENABLED: ${TRIVY_ENABLED:-false}
+    TRIVY_CACHE_DIR: /cache
+
+    # -- Console
+    WEB_BASEROW_TOKEN: ${WEB_BASEROW_TOKEN:-}
+    WEB_CACHE_TTL: ${WEB_CACHE_TTL:-60}
+    WEB_FAVICON_DISCOVERY: ${WEB_FAVICON_DISCOVERY:-true}
+
+    # -- Cadences
+    INTERVAL_CONTAINERS: ${INTERVAL_CONTAINERS:-900}
+    INTERVAL_NODES: ${INTERVAL_NODES:-3600}
+    INTERVAL_CUP: ${INTERVAL_CUP:-21600}
+    INTERVAL_TRIVY: ${INTERVAL_TRIVY:-86400}
+    RETIRE_GRACE_HOURS: ${RETIRE_GRACE_HOURS:-72}
+    RUN_ONCE: "false"
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  collector:
+    <<: *tinycmdb
+    container_name: tinycmdb-collector
+    volumes:
+      - trivy-cache:/cache
+
+  web:
+    <<: *tinycmdb
+    container_name: tinycmdb-console
+    depends_on: [collector]
+    command: ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8080",
+              "--no-server-header", "--proxy-headers"]
+    ports:
+      # Publié sur une seule adresse, jamais 0.0.0.0 : cette console agrège tout
+      # l'inventaire, elle n'a rien à faire sur les autres segments du réseau. Poser
+      # WEB_BIND_IP à l'adresse de l'hôte sur le VLAN d'administration ; à défaut, elle
+      # n'est joignable que depuis l'hôte lui-même.
+      - "${WEB_BIND_IP:-127.0.0.1}:8080:8080"
+    healthcheck:
+      # /livez et non /healthz : le premier ne répond que du process, le second charge
+      # l'inventaire depuis Baserow. Baserow indisponible ferait redémarrer la console en
+      # boucle pour une panne qui n'est pas la sienne.
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  trivy-cache:
+
+networks:
+  tinycmdb:
+    driver: bridge

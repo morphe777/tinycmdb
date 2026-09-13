@@ -11,17 +11,17 @@ services:
     # Étiquette de version en plus de `latest` : sans elle, revenir à la version
     # précédente après une régression suppose de la reconstruire, donc de savoir à quel
     # commit — ce qui est précisément ce qu'on n'a plus sous la main ce jour-là.
-    image: ghcr.io/morphe777/tinycmdb:0.1.0
+    image: ghcr.io/morphe777/tinycmdb:0.1.1
     container_name: tinycmdb-collector
     restart: unless-stopped
     env_file:
       - .env
     volumes:
       # Base de vulnérabilités Trivy (~1 Go, voir sources/trivy.py) : persistante, sinon
-      # retéléchargée en entier à chaque redémarrage. `mkdir trivy-cache && chown 1000
-      # trivy-cache` avant le premier démarrage (le conteneur tourne en UID 1000, voir
-      # Dockerfile, et ne peut pas chown un volume monté lui-même).
-      - ./trivy-cache:/cache
+      # retéléchargée en entier à chaque redémarrage. Volume nommé plutôt que montage
+      # depuis le répertoire du projet : rien à préparer à la main, le répertoire existe
+      # dans l'image avec le bon propriétaire et le volume en hérite.
+      - trivy-cache:/cache
     networks:
       - tinycmdb
     logging:
@@ -34,7 +34,7 @@ services:
   # commande différente : une seule construction, un seul jeu de dépendances.
   web:
     build: .
-    image: ghcr.io/morphe777/tinycmdb:0.1.0
+    image: ghcr.io/morphe777/tinycmdb:0.1.1
     container_name: tinycmdb-console
     restart: unless-stopped
     depends_on:
@@ -65,6 +65,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  trivy-cache:
 
 networks:
   tinycmdb:

@@ -119,17 +119,7 @@ $EDITOR .env      # BASEROW_URL, BASEROW_TOKEN, TABLE_*, PROXMOX_URL and/or DOCK
 Never `0.0.0.0`: this console aggregates the entire inventory and has no
 business on your other segments.
 
-**5. Prepare the Trivy cache** — a bind mount, and the container runs as UID
-1000, so it cannot chown the directory itself:
-
-```bash
-mkdir trivy-cache && sudo chown 1000 trivy-cache
-```
-
-Skip it with `TRIVY_ENABLED=false` if you do not want vulnerability scanning;
-the Security screen will then have nothing to show.
-
-**6. Start.** Either pull the published image:
+**5. Start.** Either pull the published image:
 
 ```bash
 docker compose pull
@@ -149,8 +139,11 @@ Then watch the first pass:
 docker compose logs -f collector
 ```
 
-The first pass takes a few minutes if Trivy has to download its vulnerability
-database (~1 GB, cached afterwards). The console is immediately available on
+The Trivy cache is a named volume — nothing to create, nothing to `chown`. The
+first pass takes a few minutes if Trivy has to download its vulnerability
+database (~1 GB, kept in that volume afterwards); set `TRIVY_ENABLED=false` to
+skip scanning entirely, and the Security screen will simply have nothing to
+show. The console is immediately available on
 port 8080 of the address set in step 4; until the first pass completes, it will
 honestly tell you the inventory is empty.
 
@@ -241,6 +234,31 @@ the day you chose to upgrade.
 One image, two services — the collector and the console share the same code and
 the same dependencies, only the command differs. Building two would cost twice
 the build time and create the possibility that they drift apart.
+
+## Deploying with Portainer
+
+`compose.portainer.yaml` is a stack ready to paste into *Stacks → Add stack →
+Web editor*. It differs from `compose.yaml` in three ways, and those three are
+the whole reason it exists as a separate file:
+
+- **No build.** Portainer has no copy of the repository, so `build:` would have
+  no context. The published image is pulled as-is.
+- **No `env_file`.** There is no `.env` beside a stack typed into a browser.
+  Variables are declared in the file and their values come from Portainer's
+  *Environment variables* panel — which keeps your tokens out of the YAML, and
+  therefore out of sight of anyone reading the stack.
+- **A named volume** for the Trivy cache. "Next to the stack" means nothing when
+  the stack is a form field.
+
+Define at least `BASEROW_URL`, `BASEROW_TOKEN`, the six `TABLE_*`, and something
+to collect from — `PROXMOX_URL` + `PROXMOX_TOKEN`, or `DOCKER_HOSTS`, or both.
+Everything else has a working default. Set `WEB_BIND_IP` to your host's address
+on your management VLAN; left alone, the console is reachable from the host
+only, which is the safe default but probably not what you want.
+
+The file uses a YAML anchor to avoid declaring the same twenty-odd variables
+twice. Docker Compose v2 handles it natively; Portainer 1.x would not, but
+neither would it run any of this.
 
 ## Local development (without Docker)
 

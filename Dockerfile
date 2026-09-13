@@ -42,6 +42,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # voir compose.override.yaml.example.
 COPY app/ /app/
 
+# Le cache Trivy est monté en volume. Le créer ici, appartenant à l'utilisateur du
+# conteneur, est ce qui rend un volume nommé utilisable : Docker initialise un volume vide
+# à partir du répertoire correspondant de l'image, propriétaire et permissions compris.
+# Sans ce répertoire, le volume est créé root, Trivy ne peut rien y écrire, et le message
+# d'erreur ne désigne pas la cause — panne classique des déploiements par Portainer.
+RUN mkdir -p /cache && chown tinycmdb:tinycmdb /cache
+
 USER tinycmdb
 
 ENV PYTHONUNBUFFERED=1
