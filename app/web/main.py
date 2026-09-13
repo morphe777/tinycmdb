@@ -23,6 +23,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import FormData
 
+import version
+
 from . import config, ecriture, schema, store
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -115,6 +117,8 @@ def render(request, name, snap, status_code=200, **context):
         "css_version": actif_version("console.css"),
         "js_version": actif_version("console.js"),
         "cache_age": data.age_seconds,
+        "version": version.libelle(),
+        "version_longue": version.libelle(court=False),
         "ORIGIN_LABELS": schema.ORIGIN_LABELS,
         "ORIGIN_SHORT": schema.ORIGIN_SHORT,
     })
@@ -543,7 +547,8 @@ def baserow_indisponible(request: Request, exc: store.BaserowIndisponible):
         request, "indisponible.html",
         {"url": cfg.BASEROW_URL, "detail": str(exc),
          "css_version": actif_version("console.css"),
-         "js_version": actif_version("console.js")},
+         "js_version": actif_version("console.js"),
+         "version": version.libelle()},
         status_code=503)
 
 

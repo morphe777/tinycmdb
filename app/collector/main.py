@@ -8,6 +8,8 @@ import socket
 import time
 from datetime import datetime, timezone
 
+import version
+
 from . import config
 from . import netcheck
 from . import oui
@@ -506,6 +508,7 @@ def _setup_logging(level):
 def main():
     cfg = config.load()
     _setup_logging(cfg.LOG_LEVEL)
+    logger.info("TinyCMDB %s", version.libelle(court=False))
 
     if not cfg.BASEROW_VERIFY_TLS or not getattr(cfg, "PROXMOX_VERIFY_TLS", True):
         # Sans ça, urllib3 écrit un avertissement PAR REQUÊTE : quelques centaines de

@@ -79,6 +79,7 @@
     {{ snap.stacks|length }} stacks · {{ snap.images|length }} images ·
     {{ snap.ips|length }} adresses · {{ snap.apps|length }} applications</span>
   <form method="post" action="/rafraichir"><button type="submit">Recharger depuis Baserow</button></form>
+  <span class="pied-version" title="Version de l'image en cours d'exécution">{{ version }}</span>
 </footer>
 
 <script>

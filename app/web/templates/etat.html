@@ -151,6 +151,7 @@
   <section class="bloc">
     <h2>Cet instantané</h2>
     <table class="fiche">
+      <tr><th>Version</th><td><code>{{ version_longue }}</code></td></tr>
       <tr><th>Pris</th><td>{{ snap.fetched_at|datefr }} <span class="vide">({{ snap.fetched_at|ago }})</span></td></tr>
       <tr><th>Durée de vie du cache</th><td>{{ snap.cfg.CACHE_TTL }} s</td></tr>
       <tr><th>Baserow</th><td><code>{{ snap.cfg.BASEROW_URL }}</code></td></tr>

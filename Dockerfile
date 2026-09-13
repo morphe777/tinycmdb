@@ -42,6 +42,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # voir compose.override.yaml.example.
 COPY app/ /app/
 
+# Injectés par la CI depuis l'étiquette git. Ce sont eux, et non le fichier VERSION,
+# qui disent si le conteneur qui tourne est bien celui qu'on vient de publier : un
+# fichier du dépôt dit la même chose quelle que soit l'image.
+ARG TINYCMDB_COMMIT=""
+ARG TINYCMDB_BUILD_DATE=""
+ENV TINYCMDB_COMMIT=$TINYCMDB_COMMIT
+ENV TINYCMDB_BUILD_DATE=$TINYCMDB_BUILD_DATE
+
 # Le cache Trivy est monté en volume. Le créer ici, appartenant à l'utilisateur du
 # conteneur, est ce qui rend un volume nommé utilisable : Docker initialise un volume vide
 # à partir du répertoire correspondant de l'image, propriétaire et permissions compris.
