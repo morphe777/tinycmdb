@@ -506,6 +506,16 @@ def _setup_logging(level):
 def main():
     cfg = config.load()
     _setup_logging(cfg.LOG_LEVEL)
+
+    if not cfg.BASEROW_VERIFY_TLS or not getattr(cfg, "PROXMOX_VERIFY_TLS", True):
+        # Sans ça, urllib3 écrit un avertissement PAR REQUÊTE : quelques centaines de
+        # lignes par passe, qui noient les seuls messages qui comptent. Le journal
+        # devient illisible, donc inutile, donc jamais lu le jour où il dit quelque
+        # chose. La vérification reste désactivée, c'est un choix assumé de la
+        # configuration — le répéter n'ajoute rien.
+        import urllib3
+
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     client = BaserowClient(cfg.BASEROW_URL, cfg.BASEROW_TOKEN, cfg.BASEROW_VERIFY_TLS)
 
     last_node_pass = 0.0
