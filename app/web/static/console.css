@@ -846,8 +846,12 @@ a.case:hover { outline: 2px solid var(--encre); outline-offset: 1px; text-decora
 .champ input[type="checkbox"] { accent-color: var(--manuel); width: 15px; height: 15px; margin: 0; }
 .bascule { font-size: 14px; }
 
+/* Actions en bas a droite, la principale la plus a droite : c'est le sens de lecture, et
+   c'est ou la main revient apres avoir parcouru le formulaire. Meme regle partout —
+   fiches, fenetre de creation, page d'une stack. */
 .barre-form {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  flex-wrap: wrap;
   padding-top: 4px; border-top: 1px solid var(--trait); margin-top: 2px;
 }
 .barre-form .bouton { margin-top: 12px; }
@@ -1013,5 +1017,12 @@ a.case-libre:hover {
    voit. La barre de boutons, elle, vit ici hors de la grille du formulaire d edition, ou
    elle tient sa mise en page — il faut la lui redonner. */
 .fiche tr.ligne-champ th, .fiche tr.ligne-champ td { vertical-align: middle; }
-.fiche tr.ligne-champ td { padding: 10px 0; }
 .bloc > form > .barre-form { margin-top: 14px; }
+
+/* Un champ pose dans une ligne de fiche se tient plus bas qu'un champ de formulaire : il
+   voisine des lignes de texte, pas d'autres champs. Sans quoi la ligne fait le double des
+   trois autres et se remarque plus que ce qu'elle contient. */
+.fiche .ligne-champ .combo-declencheur,
+.fiche .ligne-champ select,
+.fiche .ligne-champ input[type="text"] { padding: 5px 10px; font-size: 13.5px; }
+.fiche tr.ligne-champ td { padding: 5px 0; }

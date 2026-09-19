@@ -367,8 +367,8 @@
   {% endif %}
   {% for c in champs %}{{ champ_saisie(c) }}{% endfor %}
   <div class="barre-form">
-    <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
     <a class="bouton" href="{{ obj.url }}">Annuler</a>
+    <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
   </div>
 </form>
 {%- endmacro %}
@@ -398,8 +398,8 @@
     {% endfor %}
     {% for c in champs %}{{ champ_saisie(c) }}{% endfor %}
     <div class="barre-form">
-      <button type="submit" class="bouton bouton-primaire">Créer</button>
       <a class="bouton" href="{{ retour }}" data-fermer>Annuler</a>
+      <button type="submit" class="bouton bouton-primaire">Créer</button>
     </div>
   </form>
 </dialog>
