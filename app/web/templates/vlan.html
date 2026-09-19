@@ -11,7 +11,10 @@
   {{ m.creation('creer-ip', 'Réserver une adresse', '/creer/ip', creation_champs,
                 creation_ouverte, creation_erreur, vlan.url, {'vlan': vlan.id}) }}
 
-  <div class="colonnes-vlan{{ ' une-colonne' if edition }}">
+  {# La page ne se reorganise plus a l'entree en modification : la grille d'occupation
+     reste ou elle est, et le champ prend la place de la valeur. Rien ne bouge, c'est tout
+     l'interet. #}
+  <div class="colonnes-vlan">
     <section class="bloc">
       {% if grid %}
       <h2>Occupation <span class="compte">{{ vlan.ips|length }} / 254 documentées</span>
@@ -81,18 +84,32 @@
             VLAN reste à faire dans Baserow.</p>
         {% endcall %}
       </h2>
+      {# Comme partout ailleurs : le champ prend la place de la valeur, sous l'intitulé
+         qui est déjà là. #}
+      {% set par_nom = {} %}
+      {% for c in champs %}{% if par_nom.__setitem__(c.champ, c) %}{% endif %}{% endfor %}
       {% if edition %}
-      {{ m.edition(vlan, champs, erreur) }}
-      {% else %}
+      <form method="post" action="/modifier/vlan/{{ vlan.id }}">
+        {% if erreur %}
+        <p class="alerte-form" role="alert"><b>Enregistrement refusé.</b> {{ erreur }}</p>
+        {% endif %}
+      {% endif %}
       <table class="fiche">
         {% for r in rows %}
-        <tr>
+        {% set c = par_nom.get(r.field) if edition %}
+        <tr class="{{ 'ligne-champ' if c }}">
           <th>{{ r.field }}</th>
-          <td>{{ m.valeur(r, vlan) }}</td>
+          <td>{% if c %}{{ m.champ_cellule(c) }}{% else %}{{ m.valeur(r, vlan) }}{% endif %}</td>
           {% if not origine_commune %}<td class="col-origine">{{ m.origine(r.origin) }}</td>{% endif %}
         </tr>
         {% endfor %}
       </table>
+      {% if edition %}
+        <div class="barre-form">
+          <a class="bouton" href="{{ vlan.url }}">Annuler</a>
+          <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
+        </div>
+      </form>
       {% endif %}
     </section>
   </div>

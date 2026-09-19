@@ -15,6 +15,20 @@
 {%- if contenu and contenu|trim %}<tr><th>{{ titre }}</th><td>{{ contenu }}</td></tr>{% endif -%}
 {% endmacro %}
 
+{#
+  Les champs modifiables, ranges par l'endroit ou ils s'affichent deja. La modification ne
+  deplace rien : le champ prend la place de la valeur, sous l'intitule qui est deja la. On
+  reste dans la page, et on voit exactement ce qu'on modifie.
+#}
+{% set par_nom = {} %}
+{% for c in champs %}{% if par_nom.__setitem__(c.champ, c) %}{% endif %}{% endfor %}
+{% set noms_lignes = rows|map(attribute='field')|list %}
+{# Le nom ne figure pas dans le tableau : il est le titre de la page. En modification il
+   lui faut pourtant une ligne, sans quoi il serait le seul champ inaccessible. #}
+{% set champ_nom = par_nom.get('Name') if 'Name' not in noms_lignes %}
+{# Le rattachement aux stacks s'affiche dans le cadre Liens, c'est donc la qu'il s'edite. #}
+{% set champ_stack = par_nom.get('stack') %}
+
 {% block contenu %}
 <div class="page">
   <p class="fil">{{ libelles[obj.kind] }}</p>
@@ -26,7 +40,14 @@
 
   {# En modification, la fiche passe sur une colonne : le formulaire occupe la page, et le
      bloc Liens le suit au lieu de lui disputer la moitié de la largeur. #}
-  <div class="deux-colonnes{{ ' une-colonne' if edition }}">
+  {% if edition %}
+  <form method="post" action="/modifier/{{ obj.url.split('/')[1] }}/{{ obj.id }}">
+    {% if erreur %}
+    <p class="alerte-form" role="alert"><b>Enregistrement refusé.</b> {{ erreur }}</p>
+    {% endif %}
+  {% endif %}
+
+  <div class="deux-colonnes">
     <section class="bloc">
       <h2>{{ "Modification" if edition else "Champs" }}
         {{ m.bouton_modifier(obj, champs) if not edition }}
@@ -56,25 +77,29 @@
           {% endif %}
         {% endcall %}
       </h2>
-      {% if edition %}
       {#
-        Seuls les champs modifiables sont présentés. Les afficher tous, dont les quinze
-        que le collecteur réécrit, donnerait un formulaire où l'essentiel du contenu est
-        grisé — et ferait chercher longtemps pourquoi tel champ ne s'ouvre pas. Le retour
-        à la fiche complète est à un clic.
+        Toutes les lignes restent affichees en modification, y compris celles que le
+        collecteur reecrit : ce sont elles qui donnent son sens a ce qu'on corrige, et leur
+        mention de provenance explique sur place pourquoi elles ne s'ouvrent pas. N'en
+        montrer qu'une poignee faisait perdre la fiche de vue.
       #}
-      {{ m.edition(obj, champs, erreur) }}
-      {% else %}
       <table class="fiche">
+        {% if edition and champ_nom %}
+        <tr class="ligne-champ origine-ligne-manuel">
+          <th>{{ champ_nom.libelle }}</th>
+          <td>{{ m.champ_cellule(champ_nom) }}</td>
+          {% if not origine_commune %}<td class="col-origine">{{ m.origine('manuel') }}</td>{% endif %}
+        </tr>
+        {% endif %}
         {% for r in rows %}
-        <tr class="origine-ligne-{{ r.origin }}">
+        {% set c = par_nom.get(r.field) if edition %}
+        <tr class="origine-ligne-{{ r.origin }}{{ ' ligne-champ' if c }}">
           <th>{{ r.field }}</th>
-          <td>{{ m.valeur(r, obj) }}</td>
+          <td>{% if c %}{{ m.champ_cellule(c) }}{% else %}{{ m.valeur(r, obj) }}{% endif %}</td>
           {% if not origine_commune %}<td class="col-origine">{{ m.origine(r.origin) }}</td>{% endif %}
         </tr>
         {% endfor %}
       </table>
-      {% endif %}
     </section>
 
     <section class="bloc">
@@ -115,13 +140,39 @@
 
         {% elif obj.kind == 'application' %}
           {{ rel("Où ça tourne", m.chaines(obj.hosts) if obj.hosts) }}
+          {% if edition and champ_stack %}
+          <tr class="ligne-champ">
+            <th>Stacks
+              {% call m.aide("Où tourne cette application") %}
+                <p>Le lien est porté par les <b>conteneurs</b>, pas par l'application ni
+                  par la stack. Cocher une stack le pose sur tous ses conteneurs ; la
+                  décocher retire <b>cette</b> application et elle seule — un conteneur
+                  peut en servir plusieurs.</p>
+                <p>C'est ce lien qui donne sa criticité à une stack, et donc qui décide de
+                  sa mise à jour automatique hebdomadaire.</p>
+                <p>Les conteneurs hors stack ne figurent pas ici : cet écran parle de
+                  stacks, et ce qu'il ne montre pas, il n'y touche pas.</p>
+              {% endcall %}
+            </th>
+            <td>{{ m.champ_cellule(champ_stack) }}</td>
+          </tr>
+          {% else %}
           {{ rel("Stacks", m.liens_stacks(obj.stacks) if obj.stacks) }}
+          {% endif %}
           {{ rel("Conteneurs", m.liens_conteneurs(obj.containers) if obj.containers) }}
           {{ rel("Vulnérabilités cumulées", m.cve_cumul(obj) if obj.images) }}
         {% endif %}
       </table>
     </section>
   </div>
+
+  {% if edition %}
+    <div class="barre-form barre-page">
+      <a class="bouton" href="{{ obj.url }}">Annuler</a>
+      <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
+    </div>
+  </form>
+  {% endif %}
 
   {% if obj.kind == 'node' and obj.containers %}
   <section class="bloc">

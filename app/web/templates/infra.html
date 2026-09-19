@@ -42,7 +42,14 @@
 
 {% block contenu %}
 <div class="page">
-  <h1>Infrastructure</h1>
+  {# L'action est en tete de page et non dans le cadre Parc physique : on peut aussi y
+     declarer une machine virtuelle que Proxmox ne porte pas. Le geste vaut pour la page
+     entiere. #}
+  <div class="entete-page">
+    <h1>Infrastructure</h1>
+    <a class="bouton bouton-primaire" href="/infra?nouveau=1#creer-noeud"
+       data-nouvelle="">Nouvel équipement</a>
+  </div>
   {{ m.creation('creer-noeud', 'Nouvel équipement', '/creer/noeud', creation_champs,
                 creation_ouverte, creation_erreur, '/infra') }}
 
@@ -83,10 +90,6 @@
   <header class="entete-section">
     <h2>Parc physique
       <span class="compte">{{ snap.physical|length }} équipements</span>
-      {# Ici et non en tête de page : on n'ajoute à la main que ce que Proxmox ne voit
-         pas, et tout ce qui se saisit atterrit dans ce cadre-là. #}
-      <a class="bouton bouton-discret" href="/infra?nouveau=1#creer-noeud"
-         data-nouvelle="">Nouvel équipement</a>
       {% call m.aide("Parc physique") %}
         <p>Tout ce qui existe matériellement, hyperviseurs compris — ils figurent ici comme
           machines réelles, et plus haut comme racines de l'arbre de virtualisation.</p>

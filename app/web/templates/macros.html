@@ -250,15 +250,17 @@
   Un champ de formulaire, quel que soit son type. Partagé par la modification d'une fiche
   et par les formulaires de création : le rendu d'un champ ne dépend que du champ.
 #}
-{% macro champ_saisie(c) -%}
+{#
+  Le controle seul, sans intitule ni cadre : c'est la meme saisie qu'on pose dans une
+  case de fiche, ou dans un formulaire de creation. Deux presentations, un seul endroit
+  qui decide de quoi a quoi ressemble un champ.
+#}
+{% macro controle(c) -%}
 {% set nom = 'champ.' ~ c.champ %}
 {% set cid = 'f-' ~ c.champ|replace(' ', '-') %}
-{# Déclare au serveur les champs que ce formulaire porte : une case décochée et un champ
-   absent de la requête sont sans cela indiscernables. #}
+{# Declare au serveur les champs que ce formulaire porte : une case decochee et un champ
+   absent de la requete sont sans cela indiscernables. #}
 <input type="hidden" name="soumis" value="{{ c.champ }}">
-<div class="champ{{ ' champ-large' if c.widget == 'long' }}">
-  <label for="{{ cid }}">{{ c.libelle }}</label>
-
   {% if c.widget == 'long' %}
     <textarea id="{{ cid }}" name="{{ nom }}" rows="4">{{ c.valeur or '' }}</textarea>
 
@@ -297,9 +299,30 @@
     <input id="{{ cid }}" name="{{ nom }}" type="text" value="{{ c.valeur or '' }}"
            maxlength="255">
   {% endif %}
+{%- endmacro %}
 
+
+{#
+  Le meme controle, avec son intitule au-dessus : c'est la forme qu'il prend dans une
+  fenetre de creation, ou rien ne preexiste a quoi s'adosser.
+#}
+{% macro champ_saisie(c) -%}
+{% set cid = 'f-' ~ c.champ|replace(' ', '-') %}
+<div class="champ{{ ' champ-large' if c.widget == 'long' }}">
+  <label for="{{ cid }}">{{ c.libelle }}</label>
+  {{ controle(c) }}
   {% if c.notice %}<small class="notice">{{ c.notice }}</small>{% endif %}
 </div>
+{%- endmacro %}
+
+
+{#
+  Et dans une ligne de fiche : le champ prend la place de la valeur, sous l'intitule qui
+  est deja la. On reste dans la page, et on voit exactement ce qu'on modifie.
+#}
+{% macro champ_cellule(c) -%}
+{{ controle(c) }}
+{% if c.notice %}<small class="notice">{{ c.notice }}</small>{% endif %}
 {%- endmacro %}
 
 
@@ -348,29 +371,6 @@
     <p class="combo-rien" hidden>Aucun résultat pour ce filtre.</p>
   </div>
 </div>
-{%- endmacro %}
-
-
-{#
-  Formulaire de modification d'une fiche. Les champs affichés sont ceux que
-  `ecriture.formulaire()` a retenus ; le gabarit ne décide de rien, il rend.
-
-  Une seule soumission plutôt qu'une édition champ par champ en arrière-plan : la console
-  est servie par un code monté en lecture seule qu'on redémarre à la main, et une base où
-  l'on corrige trois notes par mois n'a pas de quoi amortir dix fois plus de points de
-  défaillance.
-#}
-{% macro edition(obj, champs, erreur) -%}
-<form class="edition" method="post" action="/modifier/{{ obj.url.split('/')[1] }}/{{ obj.id }}">
-  {% if erreur %}
-  <p class="alerte-form" role="alert"><b>Enregistrement refusé.</b> {{ erreur }}</p>
-  {% endif %}
-  {% for c in champs %}{{ champ_saisie(c) }}{% endfor %}
-  <div class="barre-form">
-    <a class="bouton" href="{{ obj.url }}">Annuler</a>
-    <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
-  </div>
-</form>
 {%- endmacro %}
 
 

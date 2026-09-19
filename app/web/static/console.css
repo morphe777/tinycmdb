@@ -801,7 +801,6 @@ a.case:hover { outline: 2px solid var(--encre); outline-offset: 1px; text-decora
   text-decoration: none;
 }
 
-.une-colonne { grid-template-columns: 1fr !important; }
 
 /* Grille de champs plutôt qu'une pile : sur un écran large, onze champs empilés font
    défiler une page entière pour corriger une mémoire. Le nombre de colonnes est fixé par
@@ -1029,3 +1028,20 @@ a.case-libre:hover {
 .fiche .ligne-champ select,
 .fiche .ligne-champ input[type="text"] { padding: 5px 10px; font-size: 13.5px; }
 .fiche tr.ligne-champ td { padding: 5px 0; }
+
+/* Titre de page portant une action. L action reste a droite, a hauteur du titre : c est
+   la premiere chose qu on cherche en arrivant sur la page pour ajouter quelque chose. */
+.entete-page {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.entete-page h1 { margin: 0; }
+.entete-page .bouton { margin-left: auto; }
+
+/* Barre d actions d une fiche : elle clot les deux cadres au lieu d en clore un seul, et
+   se pose donc en pleine largeur sous eux. */
+.barre-page { margin-top: 18px; }
+
+@media (max-width: 560px) {
+  .entete-page .bouton { margin-left: 0; width: 100%; justify-content: center; }
+}
