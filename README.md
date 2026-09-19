@@ -462,6 +462,20 @@ set of dependencies, and no way for the two to drift apart.
 docker compose up -d web
 ```
 
+**Collect now (`app/signaux.py`).** The collector runs on a timer — 15 minutes
+for containers, 24 hours for Trivy. After fixing something in the
+infrastructure, waiting for the next cycle to confirm it is the tool's most
+tiresome daily flaw. The **State** screen carries two buttons for that:
+*inventory* (nodes, addresses, containers — seconds) and *images* (available
+versions, then Trivy on every image — minutes). Two and not one: merging them
+would charge several minutes to anyone who just corrected an IP address.
+
+The two containers have no network link, so the channel is a shared directory
+and empty files: the console drops a request, the collector picks it up within
+two seconds — its sleep is now sliced — and publishes back what it is doing.
+Mount the `signal` volume in **both** services; without it the page says so and
+the buttons are simply absent.
+
 **Why a service and not a static page.** A Baserow *database token* can be
 restricted neither by origin nor by row: exposed in a browser, it grants access
 to the whole database, not just the screen on display. So the token lives
@@ -551,6 +565,46 @@ rights this service does not**. A reverse proxy filtering on source IP answers
 403 to the console and serves the real page to the browser: discovery fails, the
 icon shows up anyway.
 
+## Weekly updates of non-critical stacks
+
+Most images in a homelab follow a floating tag. Their content moves, their
+reference does not: left alone, they accumulate vulnerabilities that were fixed
+upstream months ago — which is exactly what the Security screen counts. Updating
+them by hand means never updating them.
+
+`app/outils/maj.py` redeploys the stacks whose applications are tagged as
+non-critical, pulling images as it goes. The boundary is the `Criticality` field
+of `Application`, read from the CMDB — not a list kept on the side, which would
+diverge the day it was written.
+
+```bash
+docker exec tinycmdb-collector python -m outils.maj              # dry run
+docker exec tinycmdb-collector python -m outils.maj --appliquer
+
+# weekly, in the host's crontab
+15 4 * * 0 docker exec tinycmdb-collector python -m outils.maj --appliquer
+```
+
+It acts on **stacks only**, through the Portainer API, and it does nothing
+without `--appliquer`.
+
+- *Stacks only* because a container created outside a stack has no deployment
+  file and no reproducible configuration: recreating it risks losing what nobody
+  wrote down.
+- *Through Portainer* because most stacks keep their compose file inside
+  Portainer's own volume (`/data/compose/N`); touching them from the host would
+  leave Portainer displaying a state that is no longer true.
+- A stack is retained only if **all** of its applications are eligible. A stack
+  shared between something unimportant and something that matters is, in
+  practice, as critical as the second. No linked application means no decision,
+  so nothing happens.
+- The stack running the script excludes itself — detected by hostname — so it
+  cannot destroy itself halfway through the loop.
+
+Needs `PORTAINER_URL` and `PORTAINER_TOKEN` (Portainer → My account → Access
+tokens) in the collector's environment. `MAJ_CRITICITES` (default `Low`) sets
+which levels are eligible, `MAJ_EXCLUS` names stacks to never touch.
+
 ## Adding a source
 
 One file in `app/collector/sources/`, exposing a `collect(...)` function that
@@ -588,7 +642,9 @@ See `.env.example` for the full list. Two things worth calling out:
   for good what it no longer sees (rule 6). This is *not* a history: see
   Reconciliation rules.
 - It never talks to the Docker socket directly.
-- It keeps no state on disk: on every start, caches are rebuilt from Baserow.
+- It keeps no *inventory* state on disk: on every start, caches are rebuilt from
+  Baserow. The only files it writes are the Trivy cache and, in the shared
+  `/signal` volume, the one-line status the console reads.
 
 ## Built in tandem
 

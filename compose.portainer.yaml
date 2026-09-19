@@ -54,6 +54,16 @@ x-tinycmdb: &tinycmdb
     WEB_CACHE_TTL: ${WEB_CACHE_TTL:-60}
     WEB_FAVICON_DISCOVERY: ${WEB_FAVICON_DISCOVERY:-true}
 
+    # -- Mise à jour hebdomadaire (outils/maj.py), facultative
+    # Seul le collecteur s'en sert — c'est dans son conteneur que la tâche cron entre.
+    # Elles sont ici malgré tout : les deux services partagent ce bloc, et le scinder pour
+    # deux variables coûterait plus en confusion qu'il ne rapporte.
+    PORTAINER_URL: ${PORTAINER_URL:-}
+    PORTAINER_TOKEN: ${PORTAINER_TOKEN:-}
+    PORTAINER_VERIFY_TLS: ${PORTAINER_VERIFY_TLS:-true}
+    MAJ_CRITICITES: ${MAJ_CRITICITES:-Low}
+    MAJ_EXCLUS: ${MAJ_EXCLUS:-}
+
     # -- Cadences
     INTERVAL_CONTAINERS: ${INTERVAL_CONTAINERS:-900}
     INTERVAL_NODES: ${INTERVAL_NODES:-3600}
