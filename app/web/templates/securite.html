@@ -22,6 +22,11 @@
           fournit pas de tag exploitable pour cette image.</p>
         <p>La colonne <b>stacks</b> indique quel projet Compose redéployer après mise à
           jour de l'image.</p>
+        <p>Seules les images <b>utilisées par au moins un conteneur</b> figurent ici. Une
+          image que plus rien n'exécute n'est pas une exposition, et ses vulnérabilités ne
+          sont comptées nulle part. Sa ligne subsiste quelques jours dans Baserow — vous
+          en verrez donc davantage là-bas — uniquement pour épargner une nouvelle analyse
+          à Trivy si elle revient.</p>
       {% endcall %}
     </h2>
 

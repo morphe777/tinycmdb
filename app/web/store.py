@@ -369,6 +369,20 @@ class Snapshot:
         self.nodes.sort(key=key)
         self.containers.sort(key=key)
         self.apps.sort(key=key)
+        # Une image qu'aucun conteneur n'utilise ne tourne nulle part. Ce n'est ni une
+        # exposition — personne ne l'exécute — ni une saisie à protéger : le seul champ
+        # manuel de cette table est `Notes`, et il sert peu. Sa ligne ne survit au délai de
+        # grâce que pour épargner à Trivy une analyse de cinq à quinze minutes si elle
+        # revient. C'est un cache, et un cache ne s'affiche pas.
+        #
+        # Le prix de l'avoir affichée : trente pour cent de lignes en trop dans la page
+        # Sécurité, et quatre CVE critiques sur dix qui ne concernaient plus personne.
+        #
+        # Elles restent dans `by_kind`, donc leur fiche reste atteignable par son adresse.
+        # Simplement, plus rien n'y mène et plus rien ne les compte.
+        self.images_hors_service = [i for i in self.images if not i.containers]
+        self.images = [i for i in self.images if i.containers]
+
         self.images.sort(key=lambda i: (-(i.num("CVE_critical") or 0),
                                         -(i.num("CVE_high") or 0), i.name.lower()))
         self.ips.sort(key=lambda ip: ip.num("IP_int") or _ip_to_int(ip.get("Address")) or 0)
