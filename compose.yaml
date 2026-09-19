@@ -11,7 +11,7 @@ services:
     # Étiquette de version en plus de `latest` : sans elle, revenir à la version
     # précédente après une régression suppose de la reconstruire, donc de savoir à quel
     # commit — ce qui est précisément ce qu'on n'a plus sous la main ce jour-là.
-    image: ghcr.io/morphe777/tinycmdb:0.2.6
+    image: ghcr.io/morphe777/tinycmdb:0.3.0
     container_name: tinycmdb-collector
     # Le nom d'hôte, que Docker fixerait sinon à l'identifiant du conteneur — un hachis
     # illisible dans les journaux comme dans une invite de commande.
@@ -42,7 +42,7 @@ services:
   # commande différente : une seule construction, un seul jeu de dépendances.
   web:
     build: .
-    image: ghcr.io/morphe777/tinycmdb:0.2.6
+    image: ghcr.io/morphe777/tinycmdb:0.3.0
     container_name: tinycmdb-console
     hostname: tinycmdb-console
     restart: unless-stopped

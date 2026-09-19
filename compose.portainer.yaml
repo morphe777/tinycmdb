@@ -16,7 +16,7 @@
 # reste a une valeur par défaut utilisable.
 
 x-tinycmdb: &tinycmdb
-  image: ghcr.io/morphe777/tinycmdb:0.2.6
+  image: ghcr.io/morphe777/tinycmdb:0.3.0
   restart: unless-stopped
   networks: [tinycmdb]
   logging:
