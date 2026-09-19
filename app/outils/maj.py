@@ -126,14 +126,23 @@ def ma_stack(stacks):
     détruit le conteneur qui exécute cette boucle, et tout ce qui viendrait après ne serait
     jamais fait. Passée à la fin, il ne reste rien à perdre.
 
-    Le nom d'hôte d'un conteneur est, sauf réglage contraire, le début de son identifiant :
-    c'est ce que porte le champ UID de la CMDB.
+    La reconnaissance se fait par le nom d'hôte, que le compose fixe au nom du conteneur
+    (`hostname: tinycmdb-collector`). Sans ce réglage, Docker y met le début de
+    l'identifiant du conteneur, qui ne figure nulle part dans la CMDB — la clé y est
+    `hôte/nom`. La détection échoue alors, silencieusement : d'où l'avertissement plutôt
+    qu'un `return None` muet, un ordre de passage au hasard n'ayant rien d'évident à lire
+    dans un journal.
     """
     moi = socket.gethostname()
     for nom, info in stacks.items():
         for conteneur in info["conteneurs"]:
-            if conteneur["uid"].startswith(moi) or conteneur["nom"] == moi:
+            if conteneur["nom"] == moi or conteneur["uid"].endswith("/" + moi):
                 return nom
+    logger.warning(
+        "Stack de ce conteneur non reconnue (nom d'hôte : %s). Elle sera traitée dans "
+        "l'ordre commun, et si elle est retenue, les stacks suivantes ne le seront pas — "
+        "le redéploiement détruit ce conteneur. Poser `hostname: %s` dans le compose.",
+        moi, "tinycmdb-collector")
     return None
 
 
@@ -267,9 +276,34 @@ def main(argv=None):
 
     if not retenues:
         return 0
+
     if not opts.appliquer:
+        # La simulation interroge quand même Portainer, en lecture seule. Sans cela elle
+        # ne dit rien de ce qui compte vraiment avant d'armer une tâche hebdomadaire : la
+        # clé d'accès est-elle bonne, et Portainer connaît-il ces stacks sous ces noms.
+        # C'est là que se logent les surprises, pas dans la criticité.
+        if not os.environ.get("PORTAINER_URL") or not os.environ.get("PORTAINER_TOKEN"):
+            logger.info("Simulation : rien n'a été fait, et Portainer n'a pas été "
+                        "interrogé — PORTAINER_URL ou PORTAINER_TOKEN manque.")
+            return 0
+        try:
+            connues = Portainer(_env("PORTAINER_URL").rstrip("/"), _env("PORTAINER_TOKEN"),
+                                verify_tls=_bool("PORTAINER_VERIFY_TLS", True)).stacks()
+        except Exception as exc:
+            logger.error("Portainer injoignable ou clé refusée — %s", exc)
+            return 2
+        logger.info("Portainer répond : %d stack(s) connue(s)", len(connues))
+        introuvables = 0
+        for nom, apps, niveau in retenues:
+            stack = connues.get(nom)
+            if not stack:
+                logger.warning("  %-22s inconnue de Portainer", nom)
+                introuvables += 1
+            else:
+                origine = "dépôt git" if stack.get("GitConfig") else "fichier Portainer"
+                logger.info("  %-22s redéployable (%s)", nom, origine)
         logger.info("Simulation : rien n'a été fait. Ajouter --appliquer pour redéployer.")
-        return 0
+        return 1 if introuvables else 0
 
     portainer = Portainer(_env("PORTAINER_URL", obligatoire=True).rstrip("/"),
                           _env("PORTAINER_TOKEN", obligatoire=True),

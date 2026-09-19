@@ -610,7 +610,9 @@ docker exec tinycmdb-collector python -m outils.maj --appliquer
 ```
 
 It acts on **stacks only**, through the Portainer API, and it does nothing
-without `--appliquer`.
+without `--appliquer`. The dry run still queries Portainer, read-only, and
+reports whether the token works and whether Portainer knows each stack under
+that name — that is where the surprises are, not in the criticality.
 
 - *Stacks only* because a container created outside a stack has no deployment
   file and no reproducible configuration: recreating it risks losing what nobody

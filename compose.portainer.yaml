@@ -77,6 +77,9 @@ services:
   collector:
     <<: *tinycmdb
     container_name: tinycmdb-collector
+    # Par ce nom d'hôte, `outils/maj.py` reconnaît sa propre stack et la redéploie en
+    # dernier, plutôt que de se détruire au milieu de sa boucle.
+    hostname: tinycmdb-collector
     volumes:
       - trivy-cache:/cache
       # Canal console -> collecteur : sans ce volume dans LES DEUX services, les boutons
