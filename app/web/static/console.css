@@ -991,3 +991,25 @@ a.case-libre:hover {
   background: var(--crit-doux); color: var(--crit);
   border-color: color-mix(in srgb, var(--crit) 30%, transparent);
 }
+
+/* Aide contextuelle dans une cellule de fiche : deux differences avec celle d un titre.
+   Le « i » suit son intitule au lieu d etre pousse a droite — une cellule d intitule fait
+   140px, il n y a nulle part ou le pousser. Et le panneau s ouvre vers la DROITE : cette
+   colonne est collee au bord gauche de la carte, un panneau aligne a droite sortirait
+   entierement de la page, ce qu il faisait. */
+.fiche th .aide { display: inline-block; margin-left: 6px; vertical-align: middle; }
+.fiche th .aide-panneau { left: 0; right: auto; }
+
+/* Tableau des images. Une image tiree par empreinte porte une reference de 71 caracteres
+   et un tag de 64, tous insecables : une seule ligne de ce genre fait passer le tableau
+   de 1200 a 1600px, et les colonnes qui comptent — CVE, version disponible — sortent de
+   l ecran pour tout le monde. On borne ces deux colonnes, elles seules : une empreinte
+   se lit aussi bien sur deux lignes, et personne ne la lit de toute facon. */
+.tbl-images td:nth-child(1), .tbl-images td:nth-child(2) { overflow-wrap: anywhere; }
+.tbl-images td:nth-child(1) { max-width: 320px; }
+.tbl-images td:nth-child(2) { max-width: 150px; }
+
+/* Le resume d un selecteur ne doit jamais dicter la largeur de ce qui le contient : dans
+   une cellule de fiche, un bouton de 800px pousse la carte entiere hors de l ecran. */
+.combo-resume { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rattachement .combo { max-width: 100%; }

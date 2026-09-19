@@ -316,9 +316,12 @@
   descendre dans le texte du nœud ni à se soucier de l'espace autour.
 #}
 {% macro combo(c, nom, cid) -%}
+{%- set unite = {'lien:application': 'applications', 'lien:stack': 'stacks',
+                 'lien:node': 'nœuds'}.get(c.widget, 'options') -%}
 <div class="combo" data-combo>
   <button type="button" class="combo-declencheur" id="{{ cid }}" aria-expanded="false" hidden>
     <span class="combo-resume"
+          data-unite="{{ unite }}"
           data-vide="{{ 'Aucun rattachement' if c.widget.startswith('lien:') else 'Aucune option' }}"></span>
     <svg class="combo-fleche" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
   </button>

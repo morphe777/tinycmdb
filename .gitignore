@@ -14,3 +14,4 @@ compose.override.yaml
 __pycache__/
 *.pyc
 .venv/
+dev.sh

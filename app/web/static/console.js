@@ -94,10 +94,18 @@
       var choisis = etiquettes.filter(function (l) {
         return l.querySelector("input").checked;
       }).map(function (l) { return l.dataset.libelle; });
-      resume.textContent = choisis.length ? choisis.join(", ") : resume.dataset.vide;
+      // Au-delà de deux, on compte au lieu d'énumérer. Six noms mis bout à bout font une
+      // ligne qu'on ne lit pas, et qui pousse la largeur du bouton bien au-delà de la
+      // cellule qui le contient — une troncature visuelle n'y suffit pas, la largeur est
+      // déjà réservée. L'infobulle garde la liste entière à portée de survol.
+      if (choisis.length === 0) {
+        resume.textContent = resume.dataset.vide;
+      } else if (choisis.length <= 2) {
+        resume.textContent = choisis.join(", ");
+      } else {
+        resume.textContent = choisis.length + " " + (resume.dataset.unite || "éléments");
+      }
       resume.classList.toggle("combo-vide", choisis.length === 0);
-      // Le résumé est tronqué visuellement quand la sélection est longue ; l'infobulle
-      // rend la liste entière lisible sans avoir à rouvrir le panneau.
       declencheur.title = choisis.length > 2 ? choisis.join(", ") : "";
     }
 
