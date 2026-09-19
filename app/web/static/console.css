@@ -815,18 +815,28 @@ a.case:hover { outline: 2px solid var(--encre); outline-offset: 1px; text-decora
   font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
   color: var(--encre-3);
 }
+/* Un controle a la meme allure partout : dans une fenetre de creation comme dans une
+   cellule de fiche. Sans `font: inherit`, un navigateur rend les champs dans SA police —
+   une zone de texte en chasse fixe au milieu d'une fiche, entre autres — et sans
+   `width: 100%` chacun prend une largeur differente, tiree de son contenu. */
 .champ input[type="text"], .champ input[type="url"], .champ input[type="number"],
-.champ select, .champ textarea {
-  font: inherit; font-size: 14px; width: 100%; box-sizing: border-box;
+.champ select, .champ textarea,
+.ligne-champ input[type="text"], .ligne-champ input[type="url"],
+.ligne-champ input[type="number"], .ligne-champ select, .ligne-champ textarea {
+  font: inherit; font-size: 14px; width: 100%; min-width: 0; box-sizing: border-box;
   padding: 9px 11px; border: 1px solid var(--trait-fort); border-radius: 9px;
   background: var(--fond); color: var(--encre);
 }
-.champ textarea { resize: vertical; min-height: 78px; line-height: 1.5; }
-.champ input:focus, .champ select:focus, .champ textarea:focus {
+.champ textarea, .ligne-champ textarea { resize: vertical; min-height: 78px; line-height: 1.5; }
+.champ input:focus, .champ select:focus, .champ textarea:focus,
+.ligne-champ input:focus, .ligne-champ select:focus, .ligne-champ textarea:focus {
   border-color: var(--manuel); outline: 2px solid color-mix(in srgb, var(--manuel) 30%, transparent);
   outline-offset: 0;
 }
-.champ .notice { font-size: 12px; color: var(--encre-3); line-height: 1.45; }
+.champ .notice, .ligne-champ .notice {
+  display: block; margin-top: 5px;
+  font-size: 12px; color: var(--encre-3); line-height: 1.45;
+}
 .rien-champ { margin: 0; font-size: 13px; color: var(--encre-3); font-style: italic; }
 
 /* Cases à cocher plutôt qu'un <select multiple> : sur téléphone, une liste à sélection
@@ -842,7 +852,9 @@ a.case:hover { outline: 2px solid var(--encre); outline-offset: 1px; text-decora
   padding: 3px 0; cursor: pointer; min-width: 0;
 }
 .choix label span, .choix label { overflow-wrap: break-word; }
-.champ input[type="checkbox"] { accent-color: var(--manuel); width: 15px; height: 15px; margin: 0; }
+.champ input[type="checkbox"], .ligne-champ input[type="checkbox"] {
+  accent-color: var(--manuel); width: 15px; height: 15px; margin: 0;
+}
 .bascule { font-size: 14px; }
 
 /* Actions en bas a droite, la principale la plus a droite : c'est le sens de lecture, et
@@ -1026,8 +1038,15 @@ a.case-libre:hover {
    trois autres et se remarque plus que ce qu'elle contient. */
 .fiche .ligne-champ .combo-declencheur,
 .fiche .ligne-champ select,
-.fiche .ligne-champ input[type="text"] { padding: 5px 10px; font-size: 13.5px; }
+.fiche .ligne-champ input,
+.fiche .ligne-champ textarea { padding: 5px 10px; font-size: 13.5px; }
+.fiche .ligne-champ textarea { min-height: 66px; }
 .fiche tr.ligne-champ td { padding: 5px 0; }
+/* La cellule de saisie prend tout ce que l'intitule ne prend pas, et rien de plus : sans
+   largeur imposee, un champ etire la colonne et la fiche deborde de sa carte. */
+.fiche .ligne-champ td { width: 100%; }
+.fiche .ligne-champ .combo, .fiche .ligne-champ .combo-declencheur { width: 100%; }
+.fiche .ligne-champ .bascule { font-size: 13.5px; }
 
 /* Titre de page portant une action. L action reste a droite, a hauteur du titre : c est
    la premiere chose qu on cherche en arrivant sur la page pour ajouter quelque chose. */
@@ -1037,10 +1056,6 @@ a.case-libre:hover {
 }
 .entete-page h1 { margin: 0; }
 .entete-page .bouton { margin-left: auto; }
-
-/* Barre d actions d une fiche : elle clot les deux cadres au lieu d en clore un seul, et
-   se pose donc en pleine largeur sous eux. */
-.barre-page { margin-top: 18px; }
 
 @media (max-width: 560px) {
   .entete-page .bouton { margin-left: 0; width: 100%; justify-content: center; }

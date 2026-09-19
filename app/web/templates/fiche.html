@@ -100,6 +100,16 @@
         </tr>
         {% endfor %}
       </table>
+
+      {# La barre clot la carte qui porte les champs, et non la page : posee sous les deux
+         cadres, elle flottait loin de la derniere ligne saisie, dans le vide laisse par le
+         cadre Liens, souvent bien plus court. C'est la meme place que sur une stack. #}
+      {% if edition %}
+      <div class="barre-form">
+        <a class="bouton" href="{{ obj.url }}">Annuler</a>
+        <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
+      </div>
+      {% endif %}
     </section>
 
     <section class="bloc">
@@ -166,13 +176,7 @@
     </section>
   </div>
 
-  {% if edition %}
-    <div class="barre-form barre-page">
-      <a class="bouton" href="{{ obj.url }}">Annuler</a>
-      <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
-    </div>
-  </form>
-  {% endif %}
+  {% if edition %}</form>{% endif %}
 
   {% if obj.kind == 'node' and obj.containers %}
   <section class="bloc">
