@@ -618,8 +618,8 @@ without `--appliquer`.
   would be invisible from the CMDB, so forgotten, so wrong.
 
 Needs `PORTAINER_URL` and `PORTAINER_TOKEN` (Portainer → My account → Access
-tokens) in the collector's environment. `MAJ_CRITICITES` (default `Low`) sets
-which levels are eligible. `MAJ_EXCLUS` exists as an escape hatch and is best
+tokens) in the collector's environment. `UPDATE_CRITICALITIES` (default `Low`) sets
+which levels are eligible. `UPDATE_EXCLUDE` exists as an escape hatch and is best
 left empty: a stack that should not update itself is a stack whose criticality
 says so.
 

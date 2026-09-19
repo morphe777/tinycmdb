@@ -35,10 +35,10 @@ Variables d'environnement, en plus de celles du collecteur :
     PORTAINER_URL         https://portainer.internal.lcl
     PORTAINER_TOKEN       clé d'accès (Portainer : Mon compte -> Access tokens)
     PORTAINER_VERIFY_TLS  false si certificat interne (défaut : true)
-    MAJ_CRITICITES        criticités éligibles, séparées par des virgules (défaut : Low)
-    MAJ_EXCLUS            échappatoire : noms de stacks à ne jamais toucher, séparés par
-                          des virgules. Vide par défaut, et c'est ainsi qu'il faut le
-                          laisser — la criticité se change dans la CMDB, où elle se voit.
+    UPDATE_CRITICALITIES  criticités éligibles, séparées par des virgules (défaut : Low)
+    UPDATE_EXCLUDE        échappatoire : stacks à ne jamais toucher. Vide par défaut, et
+                          c'est ainsi qu'il faut le laisser — la criticité se change dans
+                          la CMDB, où la décision reste visible.
 """
 
 import argparse
@@ -238,8 +238,8 @@ def main(argv=None):
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    eligibles = set(_liste("MAJ_CRITICITES", "Low"))
-    exclus = set(_liste("MAJ_EXCLUS"))
+    eligibles = set(_liste("UPDATE_CRITICALITIES", "Low"))
+    exclus = set(_liste("UPDATE_EXCLUDE"))
 
     stacks, criticites = lire_cmdb(session, base_url,
                                    _env("TABLE_CONTAINER", obligatoire=True),
