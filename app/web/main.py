@@ -217,13 +217,15 @@ def _detail(request, kind, obj_id, edition=False, erreur=None, enregistres=0,
         for descr in champs:
             descr["valeur"] = saisie.get(descr["champ"], descr["valeur"])
     # Le rattachement aux stacks n'est pas un champ de la ligne Application : il est porté
-    # par les conteneurs. Il a donc son propre formulaire, et seulement sur cette fiche.
-    rattachement = ecriture.champ_stacks(snap, obj) \
-        if kind == "application" and ecriture.rattachement_ouvert() else None
+    # par les conteneurs. Il rejoint pourtant les autres dans le même formulaire — sans
+    # quoi la fiche aurait deux modes d'édition et deux boutons d'enregistrement, dont un
+    # visible en lecture. Ce qui le distingue est une affaire d'écriture, pas d'écran.
+    if kind == "application" and ecriture.rattachement_ouvert():
+        champs = champs + [ecriture.champ_stacks(snap, obj)]
     return render(request, "fiche.html", snap, obj=obj, rows=rows,
                   origine_commune=origine_uniforme(rows),
                   champs=champs, edition=bool(edition and champs),
-                  rattachement=rattachement, rattaches=rattaches,
+                  rattaches=rattaches,
                   erreur=erreur, enregistres=enregistres, cree=cree, status_code=code)
 
 
@@ -330,14 +332,15 @@ def stacks(request: Request):
 
 @app.get("/stack/{key:path}")
 def stack_detail(request: Request, key: str, rattaches: int = Query(-1),
-                 erreur: str = Query("")):
+                 edition: int = Query(0), erreur: str = Query("")):
     snap = snapshot()
     stack = snap.stacks_by_key.get(key)
     if stack is None:
         raise HTTPException(status_code=404, detail="stack introuvable")
+    modifiable = ecriture.rattachement_ouvert()
     return render(request, "stack.html", snap, stack=stack,
-                  rattachement=ecriture.champ_applications(snap, stack)
-                  if ecriture.rattachement_ouvert() else None,
+                  rattachement=ecriture.champ_applications(snap, stack) if modifiable else None,
+                  edition=bool(edition and modifiable),
                   rattaches=rattaches, erreur=erreur)
 
 
@@ -485,14 +488,21 @@ async def modifier(request: Request, prefixe: str, obj_id: int):
         return _detail(request, kind, obj_id, edition=True, erreur=message,
                        saisie=saisie, code=code)
 
+    # Le rattachement aux stacks voyage dans le même formulaire mais ne s'écrit pas sur
+    # la même ligne : il est porté par les conteneurs. Il part donc d'abord, et il est
+    # déclaré à `appliquer` pour que celle-ci ne le prenne pas pour un champ intrus.
+    hors_ligne = ("stack",) if kind == "application" else ()
+    rattaches = 0
     try:
-        changements = redacteur.appliquer(snap, obj, donnees)
+        if hors_ligne and "stack" in set(donnees.getlist("soumis")):
+            rattaches = redacteur.rattacher_application(snap, obj, donnees)
+        changements = redacteur.appliquer(snap, obj, donnees, hors_ligne=hors_ligne)
     except ecriture.EcritureRefusee as exc:
         return reafficher(str(exc), 400)
     except ecriture.EcritureImpossible as exc:
         return reafficher(f"Baserow a refusé l'enregistrement : {exc}", 502)
 
-    if changements:
+    if changements or rattaches:
         # L'instantané en mémoire est antérieur à l'écriture : sans ce rechargement, la
         # fiche réaffichée montrerait l'ancienne valeur pendant une minute, et donnerait
         # à croire que l'enregistrement a échoué.
@@ -500,7 +510,9 @@ async def modifier(request: Request, prefixe: str, obj_id: int):
 
     # Redirection après POST : sans elle, un rafraîchissement du navigateur renvoie le
     # formulaire une seconde fois.
-    suffixe = f"?enregistres={len(changements)}" if changements else "?enregistres=0"
+    suffixe = f"?enregistres={len(changements)}"
+    if hors_ligne:
+        suffixe += f"&rattaches={rattaches}"
     return RedirectResponse(f"/{prefixe}/{obj_id}{suffixe}", status_code=303)
 
 
@@ -590,7 +602,8 @@ async def rattacher_stack(request: Request):
     try:
         ecrits = redacteur.rattacher_stack(snap, stack, donnees)
     except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
-        return RedirectResponse(f"{stack.url}?erreur={quote(str(exc))}", status_code=303)
+        return RedirectResponse(f"{stack.url}?edition=1&erreur={quote(str(exc))}",
+                                status_code=303)
     if ecrits:
         snapshot(force=True)
     return RedirectResponse(f"{stack.url}?rattaches={ecrits}", status_code=303)

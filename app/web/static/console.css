@@ -471,8 +471,12 @@ h1 .appicon { width: 30px; height: 30px; border-radius: 12px; font-size: 15px; m
   font-size: 13px; font-weight: 400; line-height: 1.55; color: var(--encre-2);
   text-align: left;
 }
-.aide-panneau b { display: block; color: var(--encre); font-size: 12px;
-                  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+/* Le titre du panneau, et lui seul : `b` sans restriction attrapait aussi les mots mis
+   en gras au milieu d'une phrase, qui partaient alors à la ligne en capitales. */
+.aide-panneau > b:first-child {
+  display: block; color: var(--encre); font-size: 12px;
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px;
+}
 .aide-panneau p { margin: 0 0 .7em; }
 .aide-panneau p:last-child { margin-bottom: 0; }
 .lecteur-ecran {
@@ -980,13 +984,8 @@ a.case-libre:hover {
   .collecte-actions form { flex: 1; }
 }
 
-/* ------------------------------------------------------------------ rattachement applicatif */
-/* Posé dans une cellule de fiche, à la place de la liste qu'il remplace : le lien se
-   corrige là où on vient de le lire, sans changer d'écran ni de mode. */
-.rattachement { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
-.rattachement .combo { flex: 1 1 220px; min-width: 0; }
-.rattachement .bouton { flex: 0 0 auto; padding: 7px 13px; font-size: 12.5px; }
-
+/* Le rattachement applicatif n'a plus de formulaire a lui : il est devenu un champ du
+   formulaire d'edition, avec le meme bouton d'enregistrement que les autres. */
 .bandeau-ko {
   background: var(--crit-doux); color: var(--crit);
   border-color: color-mix(in srgb, var(--crit) 30%, transparent);
@@ -1008,8 +1007,3 @@ a.case-libre:hover {
 .tbl-images td:nth-child(1), .tbl-images td:nth-child(2) { overflow-wrap: anywhere; }
 .tbl-images td:nth-child(1) { max-width: 320px; }
 .tbl-images td:nth-child(2) { max-width: 150px; }
-
-/* Le resume d un selecteur ne doit jamais dicter la largeur de ce qui le contient : dans
-   une cellule de fiche, un bouton de 800px pousse la carte entiere hors de l ecran. */
-.combo-resume { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rattachement .combo { max-width: 100%; }

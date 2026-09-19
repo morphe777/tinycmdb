@@ -20,7 +20,9 @@
   <p class="fil">{{ libelles[obj.kind] }}</p>
   <h1>{% if obj.kind == 'application' %}{{ m.appicon(obj) }}{% else %}{{ m.nature(obj) }}{% endif %}{{ obj.name }}</h1>
   {{ m.compte_rendu(enregistres, cree) }}
-  {{ m.rattachement_rendu(rattaches) }}
+  {# Le compte rendu ci-dessus couvre déjà le cas où rien n'a bougé : deux bandeaux pour
+     dire deux fois la même chose se liraient comme deux échecs. #}
+  {% if rattaches > 0 %}{{ m.rattachement_rendu(rattaches) }}{% endif %}
 
   {# En modification, la fiche passe sur une colonne : le formulaire occupe la page, et le
      bloc Liens le suit au lieu de lui disputer la moitié de la largeur. #}
@@ -113,27 +115,7 @@
 
         {% elif obj.kind == 'application' %}
           {{ rel("Où ça tourne", m.chaines(obj.hosts) if obj.hosts) }}
-          {% if rattachement %}
-          <tr>
-            <th>Stacks
-              {% call m.aide("Où tourne cette application") %}
-                <p>Le lien est porté par les <b>conteneurs</b>, pas par l'application ni
-                  par la stack. Cocher une stack le pose sur tous ses conteneurs ;
-                  la décocher retire <b>cette</b> application et elle seule — un
-                  conteneur peut en servir plusieurs.</p>
-                <p>C'est ce lien qui donne sa criticité à une stack, et donc qui décide
-                  de sa mise à jour automatique hebdomadaire.</p>
-                <p>Les conteneurs hors stack ne figurent pas ici : cet écran parle de
-                  stacks, et ce qu'il ne montre pas, il n'y touche pas. Ceux-là se
-                  rattachent depuis leur propre fiche.</p>
-              {% endcall %}
-            </th>
-            <td>{{ m.rattachement('/rattacher/application/' ~ obj.id, rattachement,
-                                  'combo-app-stacks') }}</td>
-          </tr>
-          {% else %}
           {{ rel("Stacks", m.liens_stacks(obj.stacks) if obj.stacks) }}
-          {% endif %}
           {{ rel("Conteneurs", m.liens_conteneurs(obj.containers) if obj.containers) }}
           {{ rel("Vulnérabilités cumulées", m.cve_cumul(obj) if obj.images) }}
         {% endif %}

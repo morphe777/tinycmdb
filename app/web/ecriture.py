@@ -610,8 +610,13 @@ class Redacteur:
 
     # -- modification --------------------------------------------------------
 
-    def appliquer(self, snap, obj, donnees):
+    def appliquer(self, snap, obj, donnees, hors_ligne=()):
         """`donnees` est le formulaire reçu. Renvoie la liste des changements écrits.
+
+        `hors_ligne` nomme les champs que ce formulaire porte sans qu'ils appartiennent à
+        la ligne : sur une application, le rattachement aux stacks s'écrit sur des
+        conteneurs. Ils sont enregistrés par ailleurs ; ici il suffit de ne pas les
+        prendre pour des intrus.
 
         Seuls les champs effectivement modifiés partent dans la requête : Baserow laisse
         intact tout champ absent du payload, ce qui évite de réécrire dix champs — et dix
@@ -620,7 +625,7 @@ class Redacteur:
         modifiables = {c["champ"]: c for c in formulaire(snap, obj)}
 
         soumis = {clef[6:] for clef in donnees if clef.startswith("champ.")}
-        intrus = soumis - set(modifiables)
+        intrus = soumis - set(modifiables) - set(hors_ligne)
         if intrus:
             # Ni ignoré en silence, ni traité comme une attaque : le cas normal est une
             # page laissée ouverte pendant que le collecteur reprenait la main sur la

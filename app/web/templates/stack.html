@@ -7,24 +7,27 @@
 <div class="page">
   <p class="fil"><a href="/stacks">Stacks</a> › projet Compose</p>
   <h1><span class="stack-glyphe grand" aria-hidden="true"></span>{{ stack.name }}</h1>
-  {% if erreur %}<p class="bandeau bandeau-ko" role="alert"><b>Rattachement refusé.</b> {{ erreur }}</p>{% endif %}
   {{ m.rattachement_rendu(rattaches) }}
 
   <div class="deux-colonnes">
     <section class="bloc">
-      <h2>Déploiement</h2>
+      <h2>{{ "Modification" if edition else "Déploiement" }}
+        {{ m.bouton_modifier(stack, [rattachement] if rattachement and not edition else []) }}
+      </h2>
       <table class="fiche">
         <tr><th>Hôte</th><td>{% if stack.host %}{{ m.chaine(stack.host) }}{% else %}<span class="vide">—</span>{% endif %}</td></tr>
         <tr><th>Conteneurs</th><td>{{ stack.running }} en marche sur {{ stack.containers|length }}</td></tr>
         {% if stack.compose_path %}
         <tr><th>Chemin</th><td><code>{{ stack.compose_path }}</code></td></tr>
         {% endif %}
+        {% if not edition %}
         <tr>
           <th>Applications
             {% call m.aide("Rattachement applicatif") %}
               <p>Une stack ne porte pas ce lien : ce sont ses <b>conteneurs</b> qui le
-                portent, chacun de leur côté. Ce sélecteur le pose sur tous en une fois,
-                ce qui évite d'ouvrir trois fiches pour une stack de trois services.</p>
+                portent, chacun de leur côté. Le modifier ici le pose sur tous en une
+                fois, ce qui évite d'ouvrir trois fiches pour une stack de trois
+                services.</p>
               <p>C'est aussi ce lien qui décide de la mise à jour automatique
                 hebdomadaire : la criticité vient de l'application, pas de la stack. Une
                 stack sans application n'est jamais mise à jour toute seule, faute de
@@ -33,16 +36,31 @@
                 son nom sur son hôte, pas son identifiant Docker.</p>
             {% endcall %}
           </th>
-          <td>
-            {% if rattachement %}
-            {{ m.rattachement('/rattacher/stack', rattachement, 'combo-stack-apps',
-                              {'cle': stack.key}) }}
-            {% else %}
-            {{ m.liens(stack.apps) }}
-            {% endif %}
-          </td>
+          <td>{% if stack.apps %}{{ m.liens(stack.apps) }}
+              {% else %}<span class="vide">aucune</span>{% endif %}</td>
         </tr>
+        {% endif %}
       </table>
+
+      {% if edition %}
+      {#
+        Le seul champ modifiable d'une stack. Les trois lignes au-dessus décrivent son
+        déploiement, qui n'appartient pas à la CMDB : elles restent en lecture, et le
+        formulaire ne porte que ce qui est à toi. Un seul bouton, en bas, comme sur une
+        fiche — on parcourt, on corrige, on valide une fois.
+      #}
+      <form class="edition" method="post" action="/rattacher/stack">
+        {% if erreur %}
+        <p class="alerte-form" role="alert"><b>Enregistrement refusé.</b> {{ erreur }}</p>
+        {% endif %}
+        <input type="hidden" name="cle" value="{{ stack.key }}">
+        {{ m.champ_saisie(rattachement) }}
+        <div class="barre-form">
+          <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
+          <a class="bouton" href="{{ stack.url }}">Annuler</a>
+        </div>
+      </form>
+      {% endif %}
     </section>
 
     <section class="bloc">
