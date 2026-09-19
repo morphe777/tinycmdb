@@ -1041,7 +1041,11 @@ a.case-libre:hover {
 .fiche .ligne-champ input,
 .fiche .ligne-champ textarea { padding: 5px 10px; font-size: 13.5px; }
 .fiche .ligne-champ textarea { min-height: 66px; }
-.fiche tr.ligne-champ td { padding: 5px 0; }
+/* `padding` en raccourci remettait a zero le retrait gauche de la colonne de provenance,
+   plus haut : le champ venait alors toucher son etiquette « manuel ». On ne touche donc
+   qu au haut et au bas, et le champ garde ses distances avec ce qui le suit. */
+.fiche tr.ligne-champ td { padding-top: 5px; padding-bottom: 5px; }
+.fiche tr.ligne-champ td:not(.col-origine) { padding-right: 14px; }
 /* La cellule de saisie prend tout ce que l'intitule ne prend pas, et rien de plus : sans
    largeur imposee, un champ etire la colonne et la fiche deborde de sa carte. */
 .fiche .ligne-champ td { width: 100%; }
