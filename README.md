@@ -589,52 +589,31 @@ rights this service does not**. A reverse proxy filtering on source IP answers
 403 to the console and serves the real page to the browser: discovery fails, the
 icon shows up anyway.
 
-## Weekly updates of non-critical stacks
+## A read-only API
 
-Most images in a homelab follow a floating tag. Their content moves, their
-reference does not: left alone, they accumulate vulnerabilities that were fixed
-upstream months ago — which is exactly what the Security screen counts. Updating
-them by hand means never updating them.
+One route, `GET /api/stacks`, returns what the CMDB knows about each Compose
+project: its host, its path, its containers, the applications it serves and the
+criticality of those applications.
 
-`app/outils/maj.py` redeploys the stacks whose applications are tagged as
-non-critical, pulling images as it goes. The boundary is the `Criticality` field
-of `Application`, read from the CMDB — not a list kept on the side, which would
-diverge the day it was written.
-
-```bash
-docker exec tinycmdb-collector python -m outils.maj              # dry run
-docker exec tinycmdb-collector python -m outils.maj --appliquer
-
-# weekly, in the host's crontab
-15 4 * * 0 docker exec tinycmdb-collector python -m outils.maj --appliquer
+```json
+[{"nom": "baserow", "cle": "myTools/baserow", "hote": "myTools",
+  "chemin": "/data/compose/63", "conteneurs": ["baserow", "baserow-db"],
+  "applications": [{"nom": "TinyCMDB", "criticite": "Low"}]}]
 ```
 
-It acts on **stacks only**, through the Portainer API, and it does nothing
-without `--appliquer`. The dry run still queries Portainer, read-only, and
-reports whether the token works and whether Portainer knows each stack under
-that name — that is where the surprises are, not in the criticality.
+It exists so that a separate tool — one that updates stacks weekly, say — can
+read the inventory without reaching into Baserow behind its back or copying its
+naming conventions.
 
-- *Stacks only* because a container created outside a stack has no deployment
-  file and no reproducible configuration: recreating it risks losing what nobody
-  wrote down.
-- *Through Portainer* because most stacks keep their compose file inside
-  Portainer's own volume (`/data/compose/N`); touching them from the host would
-  leave Portainer displaying a state that is no longer true.
-- A stack is retained only if **all** of its applications are eligible. A stack
-  shared between something unimportant and something that matters is, in
-  practice, as critical as the second. No linked application means no decision,
-  so nothing happens.
-- No stack is excluded and no stack is special-cased. The one running the script
-  is merely handled **last** — redeploying it destroys the container executing
-  the loop, and anything queued behind would never run.
-- `Criticality` decides, and nothing else. An exception written into the code
-  would be invisible from the CMDB, so forgotten, so wrong.
+**It returns facts, not decisions.** "Is this stack eligible for an automatic
+update" is not asked here: that is a policy, and it belongs to whoever updates.
+The CMDB says what is; the other tool decides what to do about it. That is what
+lets the two exist apart — and it is why nothing in this repository holds a
+Portainer key. A CMDB that can redeploy your infrastructure is no longer an
+inventory, and a leak of it stops being an information leak.
 
-Needs `PORTAINER_URL` and `PORTAINER_TOKEN` (Portainer → My account → Access
-tokens) in the collector's environment. `UPDATE_CRITICALITIES` (default `Low`) sets
-which levels are eligible. `UPDATE_EXCLUDE` exists as an escape hatch and is best
-left empty: a stack that should not update itself is a stack whose criticality
-says so.
+No authentication of its own: the route exposes exactly what the `/stacks` page
+already renders as HTML, on the same service, behind the same bind address.
 
 ## Adding a source
 

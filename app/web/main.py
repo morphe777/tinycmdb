@@ -726,6 +726,37 @@ def baserow_indisponible(request: Request, exc: store.BaserowIndisponible):
         status_code=503)
 
 
+# --------------------------------------------------------------------------- API
+#
+# Une seule route, en JSON, en lecture seule. Elle existe parce qu'un outil tiers a besoin
+# de savoir ce que la CMDB sait — quelle stack sert quelle application, et quelle criticité
+# porte cette application — sans lire Baserow par-dessus son épaule ni recopier ses
+# conventions de nommage.
+#
+# Elle rend des faits, pas des décisions. « Cette stack est-elle éligible à une mise à
+# jour automatique » ne se demande pas ici : c'est une politique, elle appartient à qui
+# met à jour. La CMDB dit ce qui est, l'outil décide ce qu'il en fait — c'est ce qui
+# permet aux deux d'exister séparément.
+#
+# Pas d'authentification propre : la route expose exactement ce que la page /stacks montre
+# déjà en HTML, sur le même service, derrière la même adresse d'écoute.
+
+
+@app.get("/api/stacks")
+def api_stacks():
+    """Les stacks, leurs applications et la criticité de celles-ci."""
+    snap = snapshot()
+    return [{
+        "nom": st.name,
+        "cle": st.key,
+        "hote": st.host.name if st.host else None,
+        "chemin": st.compose_path,
+        "conteneurs": [c.name for c in st.containers],
+        "applications": [{"nom": a.name, "criticite": a.sel("Criticality")}
+                         for a in sorted(st.apps, key=lambda a: a.name.lower())],
+    } for st in sorted(snap.stacks, key=lambda st: st.key.lower())]
+
+
 @app.get("/livez", response_class=PlainTextResponse)
 def livez():
     """Le process répond — rien de plus, et c'est voulu.

@@ -192,9 +192,10 @@
       {% call m.aide("Stacks sans application") %}
         <p>Une stack qui n'est rattachée à aucune application est un trou dans
           l'inventaire : rien ne dit à quoi elle sert, ni ce qu'on casse en l'arrêtant.</p>
-        <p>La conséquence est concrète — la criticité vient de l'application. Une stack
-          sans application n'en a donc aucune, et la mise à jour automatique
-          hebdomadaire la laisse de côté faute de consigne.</p>
+        <p>La conséquence dépasse cet écran : la criticité vient de l'application, et
+          c'est elle que lisent les outils qui agissent sur l'infrastructure — la mise à
+          jour automatique en premier. Une stack sans application n'a aucune criticité,
+          donc aucune consigne, et reste de côté.</p>
         <p>Le rattachement se pose depuis la fiche de la stack, sur tous ses conteneurs
           en une fois.</p>
       {% endcall %}

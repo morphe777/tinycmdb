@@ -40,10 +40,10 @@
                 portent, chacun de leur côté. Le modifier ici le pose sur tous en une
                 fois, ce qui évite d'ouvrir trois fiches pour une stack de trois
                 services.</p>
-              <p>C'est aussi ce lien qui décide de la mise à jour automatique
-                hebdomadaire : la criticité vient de l'application, pas de la stack. Une
-                stack sans application n'est jamais mise à jour toute seule, faute de
-                consigne.</p>
+              <p>C'est aussi ce lien qui donne sa criticité à une stack — celle de
+                l'application, pas la sienne. Les outils qui mettent à jour
+                l'infrastructure la lisent ici ; une stack sans application n'a aucune
+                consigne, et reste de côté.</p>
               <p>Le rattachement survit aux redéploiements : la clé d'un conteneur est
                 son nom sur son hôte, pas son identifiant Docker.</p>
             {% endcall %}

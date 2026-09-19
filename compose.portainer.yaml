@@ -54,16 +54,6 @@ x-tinycmdb: &tinycmdb
     WEB_CACHE_TTL: ${WEB_CACHE_TTL:-60}
     WEB_FAVICON_DISCOVERY: ${WEB_FAVICON_DISCOVERY:-true}
 
-    # -- Mise à jour hebdomadaire (outils/maj.py), facultative
-    # Seul le collecteur s'en sert — c'est dans son conteneur que la tâche cron entre.
-    # Elles sont ici malgré tout : les deux services partagent ce bloc, et le scinder pour
-    # deux variables coûterait plus en confusion qu'il ne rapporte.
-    PORTAINER_URL: ${PORTAINER_URL:-}
-    PORTAINER_TOKEN: ${PORTAINER_TOKEN:-}
-    PORTAINER_VERIFY_TLS: ${PORTAINER_VERIFY_TLS:-true}
-    UPDATE_CRITICALITIES: ${UPDATE_CRITICALITIES:-Low}
-    UPDATE_EXCLUDE: ${UPDATE_EXCLUDE:-}
-
     # -- Cadences
     INTERVAL_CONTAINERS: ${INTERVAL_CONTAINERS:-900}
     INTERVAL_NODES: ${INTERVAL_NODES:-3600}
@@ -77,10 +67,7 @@ services:
   collector:
     <<: *tinycmdb
     container_name: tinycmdb-collector
-    # Le nom d'hôte, que Docker fixerait sinon à l'identifiant du conteneur. Les deux
-    # services le portent ; sur le collecteur il a en plus un rôle : c'est par lui que
-    # `outils/maj.py` reconnaît sa propre stack et la redéploie en dernier, plutôt que de
-    # se détruire au milieu de sa boucle.
+    # Le nom d'hôte, que Docker fixerait sinon à l'identifiant du conteneur.
     hostname: tinycmdb-collector
     volumes:
       - trivy-cache:/cache
