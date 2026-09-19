@@ -598,12 +598,17 @@ without `--appliquer`.
   shared between something unimportant and something that matters is, in
   practice, as critical as the second. No linked application means no decision,
   so nothing happens.
-- The stack running the script excludes itself — detected by hostname — so it
-  cannot destroy itself halfway through the loop.
+- No stack is excluded and no stack is special-cased. The one running the script
+  is merely handled **last** — redeploying it destroys the container executing
+  the loop, and anything queued behind would never run.
+- `Criticality` decides, and nothing else. An exception written into the code
+  would be invisible from the CMDB, so forgotten, so wrong.
 
 Needs `PORTAINER_URL` and `PORTAINER_TOKEN` (Portainer → My account → Access
 tokens) in the collector's environment. `MAJ_CRITICITES` (default `Low`) sets
-which levels are eligible, `MAJ_EXCLUS` names stacks to never touch.
+which levels are eligible. `MAJ_EXCLUS` exists as an escape hatch and is best
+left empty: a stack that should not update itself is a stack whose criticality
+says so.
 
 ## Adding a source
 

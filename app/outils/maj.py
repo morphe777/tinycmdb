@@ -36,7 +36,9 @@ Variables d'environnement, en plus de celles du collecteur :
     PORTAINER_TOKEN       clé d'accès (Portainer : Mon compte -> Access tokens)
     PORTAINER_VERIFY_TLS  false si certificat interne (défaut : true)
     MAJ_CRITICITES        criticités éligibles, séparées par des virgules (défaut : Low)
-    MAJ_EXCLUS            noms de stacks à ne jamais toucher, séparés par des virgules
+    MAJ_EXCLUS            échappatoire : noms de stacks à ne jamais toucher, séparés par
+                          des virgules. Vide par défaut, et c'est ainsi qu'il faut le
+                          laisser — la criticité se change dans la CMDB, où elle se voit.
 """
 
 import argparse
@@ -118,9 +120,11 @@ def lire_cmdb(session, base_url, table_container, table_application):
 
 
 def ma_stack(stacks):
-    """La stack qui héberge ce script — à ne jamais redéployer depuis elle-même : le
-    conteneur serait détruit au milieu de la boucle, les stacks suivantes jamais traitées,
-    et le journal perdu avec lui.
+    """La stack qui héberge ce script.
+
+    Elle n'est pas écartée — aucune ne l'est — mais traitée en dernier : la redéployer
+    détruit le conteneur qui exécute cette boucle, et tout ce qui viendrait après ne serait
+    jamais fait. Passée à la fin, il ne reste rien à perdre.
 
     Le nom d'hôte d'un conteneur est, sauf réglage contraire, le début de son identifiant :
     c'est ce que porte le champ UID de la CMDB.
@@ -185,9 +189,13 @@ def selectionner(stacks, criticites, eligibles, exclus):
 
     « Toutes » et non « au moins une » : une stack partagée entre une application sans
     importance et une autre qui compte est, dans les faits, aussi critique que la seconde.
-    Et sans application du tout, on ne sait pas — donc on ne touche pas. Le défaut prudent
-    est ici le seul défaut acceptable : se tromper coûte une interruption de service, se
-    retenir ne coûte qu'une mise à jour manuelle.
+    Sans application liée, ou sans criticité renseignée, il n'y a pas de consigne à suivre :
+    la stack est laissée telle quelle et le motif est écrit dans le journal, pour que
+    l'oubli se voie.
+
+    Ce sont les seules règles. Le script ne connaît aucun cas particulier, aucune stack
+    privilégiée : ce qui décide est le champ Criticality, et rien d'autre. Une exception
+    codée ici serait invisible depuis la CMDB, donc oubliée, donc fausse.
     """
     retenues, ecartees = [], []
     for nom in sorted(stacks):
@@ -236,12 +244,12 @@ def main(argv=None):
     stacks, criticites = lire_cmdb(session, base_url,
                                    _env("TABLE_CONTAINER", obligatoire=True),
                                    _env("TABLE_APPLICATION", obligatoire=True))
-    mienne = ma_stack(stacks)
-    if mienne:
-        exclus.add(mienne)
-        logger.info("Stack de ce conteneur exclue d'office : %s", mienne)
-
     retenues, ecartees = selectionner(stacks, criticites, eligibles, exclus)
+
+    mienne = ma_stack(stacks)
+    if mienne and mienne in {n for n, _, _ in retenues}:
+        retenues.sort(key=lambda r: r[0] == mienne)
+        logger.info("Stack de ce conteneur traitée en dernier : %s", mienne)
     if opts.stack:
         demandees = set(opts.stack)
         inconnues = demandees - {n for n, _, _ in retenues} - {n for n, _, _ in ecartees}
