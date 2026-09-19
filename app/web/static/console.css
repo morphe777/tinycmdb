@@ -1017,7 +1017,10 @@ a.case-libre:hover {
    voit. La barre de boutons, elle, vit ici hors de la grille du formulaire d edition, ou
    elle tient sa mise en page — il faut la lui redonner. */
 .fiche tr.ligne-champ th, .fiche tr.ligne-champ td { vertical-align: middle; }
-.bloc > form > .barre-form { margin-top: 14px; }
+/* Le filet des actions prend ses distances avec le dernier champ : sans cet ecart, la
+   barre se lit comme la suite du tableau plutot que comme ce qui le clot. L espace sous
+   le filet, lui, ne bouge pas — il tient les boutons a leur trait. */
+.bloc > form > .barre-form { margin-top: 33px; }
 
 /* Un champ pose dans une ligne de fiche se tient plus bas qu'un champ de formulaire : il
    voisine des lignes de texte, pas d'autres champs. Sans quoi la ligne fait le double des

@@ -16,11 +16,17 @@ justifient plus un Django, un Postgres et un Redis pour quelques centaines de li
 changer de stockage ne devra pas être une réécriture : il faudra remplacer ce fichier, et
 lui seul.
 
-Ce module ne supprime aucune ligne, et n'en crée que dans les deux tables où l'ajout est
-un geste courant : une adresse à réserver, une application à déclarer. Le token de la
-console n'a donc besoin ni de `delete`, ni de `create` ailleurs que sur Ipam et
-Application — la compromission de ce service permet de fausser l'inventaire, pas de
-l'effacer.
+Ce module ne supprime aucune ligne, et n'en crée que dans les trois tables où l'ajout est
+un geste courant : une adresse à réserver, une application à déclarer, un équipement que
+le collecteur ne peut pas découvrir — un portable, une imprimante, une caméra. Le token de
+la console n'a donc besoin ni de `delete`, ni de `create` ailleurs que sur Ipam,
+Application et Node — la compromission de ce service permet de fausser l'inventaire, pas
+de l'effacer.
+
+Une ligne Node créée ici porte `Source = Manual`, ce qui la protège intégralement : le
+collecteur ne la met pas à jour et ne la supprimera jamais, alors même qu'il ne la voit
+sur aucun hyperviseur. Sans cette clause, un portable saisi le matin disparaîtrait à la
+passe suivante.
 """
 
 import ipaddress
@@ -145,24 +151,31 @@ NOTICES_CREATION = {
     ("ipam", "Address"): "Ligne marquée « saisie manuelle » : le collecteur ne la supprimera jamais.",
     ("ipam", "Node"): "L'équipement qui répond à cette adresse, s'il est déjà inventorié.",
     ("application", "Name"): "Le regroupement fonctionnel, pas le projet Compose — celui-ci est déjà porté par la stack.",
+    ("node", "Name"): "Ce que le réseau en dit : le nom d'hôte, pas l'étiquette collée dessus.",
+    ("node", "Type"): "Physical pour un équipement réel. VM et LXC appartiennent au collecteur.",
+    ("node", "Roles"): "À quoi il sert. Ne pas poser « docker » ici : ce rôle déclenche une interrogation du socket-proxy, qui n'existe pas sur un portable.",
 }
 
 LIENS = {"lien:node": "node", "lien:application": "application"}
 
-# Tables où la console sait créer une ligne. Les quatre autres sont soit alimentées par le
-# collecteur (Node hors saisie manuelle, Container, Images), soit un référentiel qu'on
-# n'étend qu'une fois par an (VLAN) — Baserow y suffit.
-CREABLES = ("ipam", "application")
+# Tables où la console sait créer une ligne. Les trois autres sont alimentées par le
+# collecteur (Container, Images) ou constituent un référentiel qu'on n'étend qu'une fois
+# par an (VLAN) — Baserow y suffit.
+#
+# Node y figure pour ce que Proxmox ne peut pas voir : un portable, une imprimante, une
+# caméra, un NAS. Sans cela, la moitié du parc réel n'a aucun moyen d'entrer dans la CMDB,
+# et l'IPAM renvoie des adresses rattachées à rien.
+CREABLES = ("ipam", "application", "node")
 
 # Valeur imposée au champ `Source` de la ligne créée. Sur l'IPAM, c'est la clause qui
 # protège la saisie : sans `Manual`, le collecteur supprimerait cette adresse dès qu'il
 # constaterait ne pas la voir sur le réseau. Elle n'est pas proposée au formulaire — c'est
 # une conséquence du geste, pas une option.
-SOURCE_CREATION = {"ipam": "Manual"}
+SOURCE_CREATION = {"ipam": "Manual", "node": "Manual"}
 
 # Champ portant le nom, par table : sert au contrôle de doublon et au message qui
 # l'accompagne.
-CLE_NATURELLE = {"ipam": "Address", "application": "Name"}
+CLE_NATURELLE = {"ipam": "Address", "application": "Name", "node": "Name"}
 
 
 def formulaire_creation(snap, kind):

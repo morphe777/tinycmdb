@@ -458,7 +458,7 @@ set of dependencies, and no way for the two to drift apart.
 ```bash
 # .env: add TABLE_APPLICATION (the console reads it, the collector doesn't)
 #       and ideally WEB_BASEROW_TOKEN — read everywhere, update where manual
-#       fields exist, create on Ipam + Application only, delete nowhere
+#       fields exist, create on Ipam + Application + Node only, delete nowhere
 docker compose up -d web
 ```
 
@@ -474,6 +474,13 @@ loss this console exists to prevent.
 The **State** screen lists the stacks attached to nothing. It is not a collector
 fault, it is a gap in the inventory — and it has a consequence: criticality comes
 from the application, so a stack without one is never updated automatically.
+
+**Adding what Proxmox cannot see.** The **Infrastructure** screen carries a
+*New equipment* action: a laptop, a printer, a camera, a NAS. The row is marked
+as hand-entered, which protects it entirely — the collector neither updates nor
+deletes it, although it finds it on no hypervisor. Its IP address is reserved
+separately, from the VLAN page: a machine and an address are two objects, and a
+laptop changes address.
 
 **Collect now (`app/signaux.py`).** The collector runs on a timer — 15 minutes
 for containers, 24 hours for Trivy. After fixing something in the
@@ -643,8 +650,8 @@ See `.env.example` for the full list. Two things worth calling out:
   business in a process running every 15 minutes. The collector's token needs
   create/read/update **and delete** (required since real deletion was enabled,
   see rule 6). The console's token (`WEB_BASEROW_TOKEN`) needs much less: read
-  everywhere, update where manual fields exist, create on Ipam and Application
-  only, delete nowhere.
+  everywhere, update where manual fields exist, create on Ipam, Application and
+  Node only, delete nowhere.
 - **Internal TLS**: `BASEROW_VERIFY_TLS=false` works for a self-signed
   certificate on a `.lcl` domain. The cleaner alternative, if you run an
   internal CA: point `REQUESTS_CA_BUNDLE` at that CA rather than disabling

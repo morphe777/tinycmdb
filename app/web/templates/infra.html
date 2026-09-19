@@ -43,6 +43,8 @@
 {% block contenu %}
 <div class="page">
   <h1>Infrastructure</h1>
+  {{ m.creation('creer-noeud', 'Nouvel équipement', '/creer/noeud', creation_champs,
+                creation_ouverte, creation_erreur, '/infra') }}
 
   <header class="entete-section">
     <h2>Virtualisation
@@ -81,6 +83,10 @@
   <header class="entete-section">
     <h2>Parc physique
       <span class="compte">{{ snap.physical|length }} équipements</span>
+      {# Ici et non en tête de page : on n'ajoute à la main que ce que Proxmox ne voit
+         pas, et tout ce qui se saisit atterrit dans ce cadre-là. #}
+      <a class="bouton bouton-discret" href="/infra?nouveau=1#creer-noeud"
+         data-nouvelle="">Nouvel équipement</a>
       {% call m.aide("Parc physique") %}
         <p>Tout ce qui existe matériellement, hyperviseurs compris — ils figurent ici comme
           machines réelles, et plus haut comme racines de l'arbre de virtualisation.</p>
@@ -92,6 +98,12 @@
           virtualisation ci-dessus.</p>
         <p>À l'exception des hyperviseurs, ces équipements sont saisis à la main. Le
           collecteur ne les découvre pas et n'y touche jamais.</p>
+        <p><b>Nouvel équipement</b> ajoute ce que Proxmox ne peut pas voir : un portable,
+          une imprimante, une caméra, un NAS. La ligne est marquée « saisie manuelle », ce
+          qui la protège intégralement — le collecteur ne la met pas à jour et ne la
+          supprimera jamais, bien qu'il ne la trouve sur aucun hyperviseur.</p>
+        <p>L'adresse IP se réserve à part, depuis la page du VLAN : une machine et une
+          adresse sont deux objets, et un portable en change.</p>
       {% endcall %}
     </h2>
   </header>

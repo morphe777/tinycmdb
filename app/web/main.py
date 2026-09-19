@@ -286,10 +286,21 @@ def queue_detail(request: Request, key: str):
     return render(request, "file.html", snap, queue=queue)
 
 
-@app.get("/infra")
-def infra(request: Request):
+def _vue_infra(request, nouveau=False, creation_erreur=None, creation=None, code=200):
     snap = snapshot()
-    return render(request, "infra.html", snap)
+    creation_champs = ecriture.formulaire_creation(snap, "node")
+    if creation is not None:
+        for descr in creation_champs:
+            descr["valeur"] = creation.get(descr["champ"], descr["valeur"])
+    return render(request, "infra.html", snap,
+                  creation_champs=creation_champs,
+                  creation_ouverte=bool(nouveau or creation_erreur),
+                  creation_erreur=creation_erreur, status_code=code)
+
+
+@app.get("/infra")
+def infra(request: Request, nouveau: int = Query(0)):
+    return _vue_infra(request, nouveau=nouveau)
 
 
 @app.get("/securite")
@@ -563,6 +574,32 @@ async def creer_application(request: Request):
                                      snap, ecriture.formulaire_creation(snap, "application"), donnees))
     snapshot(force=True)
     return RedirectResponse(f"/application/{nouvel_id}?cree=1", status_code=303)
+
+
+@app.post("/creer/noeud")
+async def creer_noeud(request: Request):
+    """Ajoute un équipement que le collecteur ne peut pas découvrir.
+
+    La ligne porte `Source = Manual`, posé par `ecriture._derives()` et non par ce
+    formulaire : c'est une conséquence du geste, pas une option. Sans elle, le portable
+    saisi ce matin disparaîtrait à la passe suivante, faute d'être visible sur un
+    hyperviseur.
+    """
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    donnees = await _formulaire(request)
+    snap = snapshot()
+    try:
+        nouvel_id = redacteur.creer(snap, "node", donnees)
+    except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
+        message = str(exc) if isinstance(exc, ecriture.EcritureRefusee) \
+            else f"Baserow a refusé la création : {exc}"
+        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 502
+        return _vue_infra(request, creation_erreur=message, code=code,
+                          creation=ecriture.saisie_brute(
+                              snap, ecriture.formulaire_creation(snap, "node"), donnees))
+    snapshot(force=True)
+    return RedirectResponse(f"/noeud/{nouvel_id}?cree=1", status_code=303)
 
 
 @app.post("/rafraichir")
