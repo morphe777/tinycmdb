@@ -13,9 +13,11 @@ services:
     # commit — ce qui est précisément ce qu'on n'a plus sous la main ce jour-là.
     image: ghcr.io/morphe777/tinycmdb:0.2.5
     container_name: tinycmdb-collector
-    # Le nom d'hôte, que Docker fixerait sinon à l'identifiant du conteneur. C'est par lui
-    # que `outils/maj.py` reconnaît sa propre stack, pour la redéployer en dernier plutôt
-    # que de se détruire au milieu de sa boucle.
+    # Le nom d'hôte, que Docker fixerait sinon à l'identifiant du conteneur — un hachis
+    # illisible dans les journaux comme dans une invite de commande. Les deux services le
+    # portent, par cohérence ; sur le collecteur il a en plus un rôle : c'est par lui que
+    # `outils/maj.py` reconnaît sa propre stack, pour la redéployer en dernier plutôt que
+    # de se détruire au milieu de sa boucle.
     hostname: tinycmdb-collector
     restart: unless-stopped
     env_file:
@@ -45,6 +47,7 @@ services:
     build: .
     image: ghcr.io/morphe777/tinycmdb:0.2.5
     container_name: tinycmdb-console
+    hostname: tinycmdb-console
     restart: unless-stopped
     depends_on:
       - collector

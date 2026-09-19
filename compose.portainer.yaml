@@ -77,8 +77,10 @@ services:
   collector:
     <<: *tinycmdb
     container_name: tinycmdb-collector
-    # Par ce nom d'hôte, `outils/maj.py` reconnaît sa propre stack et la redéploie en
-    # dernier, plutôt que de se détruire au milieu de sa boucle.
+    # Le nom d'hôte, que Docker fixerait sinon à l'identifiant du conteneur. Les deux
+    # services le portent ; sur le collecteur il a en plus un rôle : c'est par lui que
+    # `outils/maj.py` reconnaît sa propre stack et la redéploie en dernier, plutôt que de
+    # se détruire au milieu de sa boucle.
     hostname: tinycmdb-collector
     volumes:
       - trivy-cache:/cache
@@ -89,6 +91,7 @@ services:
   web:
     <<: *tinycmdb
     container_name: tinycmdb-console
+    hostname: tinycmdb-console
     depends_on: [collector]
     volumes:
       - signal:/signal
