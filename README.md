@@ -36,8 +36,18 @@ in place rather than a history of what used to be.
   addresses cutting across — which turns "this image carries 41 critical
   vulnerabilities" into "*this* service is affected".
 - **Deletes** what has disappeared, after a grace period, and shows it coming.
+- **Answers other tools**, through one read-only JSON route, so that whatever
+  acts on the estate can read what the inventory knows without going behind it.
 
 ### What it isn't
+
+**It observes; it does not act.** Nothing here can restart, redeploy or alter
+the estate it describes: no Docker socket, no Portainer key, no credential that
+grants more than reading on Proxmox or on a host. The only thing it writes to is
+its own database. An inventory able to change what it describes is no longer an
+inventory, and a leak of it stops being a leak of information — it becomes a way
+in. Tools that act read this one through its API; a weekly updater lives outside
+this repository for exactly that reason.
 
 This is not NetBox, GLPI or i-doit. No asset lifecycle management, no ticketing,
 no approval workflow, no multi-tenancy, no history. The project targets a few
@@ -472,8 +482,9 @@ container may serve several, and dropping them all would be the kind of silent
 loss this console exists to prevent.
 
 The **State** screen lists the stacks attached to nothing. It is not a collector
-fault, it is a gap in the inventory — and it has a consequence: criticality comes
-from the application, so a stack without one is never updated automatically.
+fault, it is a gap in the inventory, and it reaches beyond this screen:
+criticality comes from the application, and it is what tools acting on the estate
+read. A stack attached to nothing carries no criticality, so no instruction.
 
 **Adding what Proxmox cannot see.** The **Infrastructure** screen carries a
 *New equipment* action: a laptop, a printer, a camera, a NAS. The row is marked
