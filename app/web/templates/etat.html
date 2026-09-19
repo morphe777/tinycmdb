@@ -69,6 +69,71 @@
   </section>
 
   <section class="bloc">
+    <h2>Collecte
+      {% call m.aide("Demander une collecte") %}
+        <p>Le collecteur repasse de lui-même à intervalle fixe. Ces deux boutons lui
+          demandent de repasser <b>tout de suite</b> — après avoir corrigé quelque chose
+          dans l'infrastructure, plutôt que d'attendre le prochain cycle.</p>
+        <p><b>Inventaire</b> — nœuds, machines virtuelles, adresses IP et conteneurs.
+          Quelques secondes : ce sont des appels à Proxmox et aux socket-proxies.</p>
+        <p><b>Images</b> — versions disponibles (Cup) puis vulnérabilités (Trivy). Trivy
+          analyse le contenu de chaque image du parc, une par une : comptez plusieurs
+          minutes. C'est la raison d'être de deux boutons plutôt qu'un.</p>
+        <p>La demande est déposée, pas exécutée dans la page : le collecteur la relève dans
+          les deux secondes et travaille à son rythme. Rechargez cette page pour suivre son
+          avancement. Une demande posée pendant que le collecteur est arrêté sera honorée à
+          son redémarrage.</p>
+        <p>Les données affichées par la console viennent de Baserow, pas du collecteur :
+          une fois la collecte terminée, <b>Recharger depuis Baserow</b> en pied de page
+          fait apparaître le résultat.</p>
+      {% endcall %}
+    </h2>
+
+    {% if not collecte.canal %}
+      <p class="rien">Le répertoire partagé avec le collecteur n'est pas monté. Ajoutez le
+        volume <code>signal</code> aux deux services dans la pile Compose pour activer la
+        collecte à la demande.</p>
+    {% else %}
+      {% if collecte.demande %}
+      <p class="avis">Collecte demandée : {{ collecte.passes[collecte.demande] }}.</p>
+      {% endif %}
+
+      <div class="collecte">
+        <p class="collecte-etat">
+          {% if collecte.etat.en_cours %}
+            <span class="badge badge-neutre">en cours</span>
+            Le collecteur traite : <b>{{ collecte.etat.en_cours }}</b>.
+          {% elif collecte.etat.maj %}
+            <span class="badge badge-ok">au repos</span>
+            Dernier cycle terminé {{ collecte.etat.maj|ago }}.
+          {% else %}
+            <span class="vide">Le collecteur n'a encore rien publié — version antérieure à
+              0.2.0, ou jamais démarré depuis le montage du volume.</span>
+          {% endif %}
+        </p>
+
+        <div class="collecte-actions">
+          {% for passe, libelle in collecte.passes.items() %}
+          <form method="post" action="/collecter/{{ passe }}">
+            <button class="bouton" type="submit" {{ 'disabled' if collecte.attente[passe] }}>
+              {% if passe == 'inventaire' %}
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></svg>
+              Collecter l'inventaire
+              {% else %}
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.2-2.9 7.5-7 8.5-4.1-1-7-4.3-7-8.5V6z"/></svg>
+              Analyser les images
+              {% endif %}
+            </button>
+            <small>{% if collecte.attente[passe] %}demandé {{ collecte.attente[passe]|ago }},
+              en attente du collecteur{% else %}{{ libelle }}{% endif %}</small>
+          </form>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="bloc">
     <h2>Sources
       {% call m.aide("Lecture de ce tableau") %}
         <p>Le collecteur ne publie pas son état. Celui-ci est déduit de la date de dernière

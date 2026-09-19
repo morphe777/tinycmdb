@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import FormData
 
+import signaux
 import version
 
 from . import config, ecriture, schema, store
@@ -63,6 +64,10 @@ def _fmt_age(value):
     if not value:
         return "jamais"
     from datetime import datetime, timezone
+    if isinstance(value, (int, float)):
+        # Le collecteur publie son état en secondes epoch (JSON n'a pas de type date) ;
+        # tout le reste de la console manipule des datetime.
+        value = datetime.fromtimestamp(value, timezone.utc)
     seconds = (datetime.now(timezone.utc) - value).total_seconds()
     if seconds < 90:
         return "à l'instant"
@@ -379,12 +384,26 @@ def recherche(request: Request, q: str = Query("")):
     return render(request, "recherche.html", snap, q=q, results=snap.search(q))
 
 
+def _collecte(demande=""):
+    """Ce que la console sait du collecteur : son état publié, et les demandes encore en
+    attente. Le canal peut être absent (volume non monté) — la page doit alors se passer
+    du bloc plutôt que d'échouer."""
+    return {
+        "canal": signaux.disponible(),
+        "etat": signaux.lire(),
+        "passes": signaux.PASSES,
+        "attente": {p: signaux.demande_posee(p) for p in signaux.PASSES},
+        "demande": demande if demande in signaux.PASSES else "",
+    }
+
+
 @app.get("/etat")
-def etat(request: Request):
+def etat(request: Request, demande: str = Query("")):
     snap = snapshot()
     composants = snap.controls(erreur_rechargement=data.derniere_erreur)
     return render(request, "etat.html", snap, sources=snap.sources_state(),
                   expiring=snap.expiring(), composants=composants,
+                  collecte=_collecte(demande),
                   en_defaut=[c for c in composants if c["verdict"] in ("warn", "ko")])
 
 
@@ -536,6 +555,26 @@ def rafraichir(request: Request):
         if parsed.path.startswith("/"):
             retour = urlunsplit(("", "", parsed.path, parsed.query, ""))
     return RedirectResponse(retour, status_code=303)
+
+
+@app.post("/collecter/{passe}")
+def collecter(request: Request, passe: str):
+    """Demande au collecteur de repasser tout de suite, sans attendre son intervalle.
+
+    La console n'écrit rien dans Baserow ici et n'attend pas le résultat : elle pose une
+    demande, le collecteur la relève dans les deux secondes et travaille à son rythme.
+    Attendre la fin de la collecte dans la requête HTTP ferait une page qui tourne dix
+    minutes, et un redémarrage de la console pendant ce temps annulerait tout.
+    """
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    if passe not in signaux.PASSES:
+        raise HTTPException(status_code=404, detail="passe inconnue")
+    if not signaux.demander(passe):
+        raise HTTPException(status_code=503,
+                            detail="canal indisponible : le volume partagé avec le "
+                                   "collecteur n'est pas monté")
+    return RedirectResponse(f"/etat?demande={passe}", status_code=303)
 
 
 @app.exception_handler(store.BaserowIndisponible)

@@ -50,12 +50,13 @@ ARG TINYCMDB_BUILD_DATE=""
 ENV TINYCMDB_COMMIT=$TINYCMDB_COMMIT
 ENV TINYCMDB_BUILD_DATE=$TINYCMDB_BUILD_DATE
 
-# Le cache Trivy est monté en volume. Le créer ici, appartenant à l'utilisateur du
-# conteneur, est ce qui rend un volume nommé utilisable : Docker initialise un volume vide
-# à partir du répertoire correspondant de l'image, propriétaire et permissions compris.
-# Sans ce répertoire, le volume est créé root, Trivy ne peut rien y écrire, et le message
-# d'erreur ne désigne pas la cause — panne classique des déploiements par Portainer.
-RUN mkdir -p /cache && chown tinycmdb:tinycmdb /cache
+# Le cache Trivy et le canal console/collecteur sont montés en volume. Les créer ici,
+# appartenant à l'utilisateur du conteneur, est ce qui rend un volume nommé utilisable :
+# Docker initialise un volume vide à partir du répertoire correspondant de l'image,
+# propriétaire et permissions compris. Sans ces répertoires, le volume est créé root, le
+# conteneur ne peut rien y écrire, et le message d'erreur ne désigne pas la cause — panne
+# classique des déploiements par Portainer.
+RUN mkdir -p /cache /signal && chown tinycmdb:tinycmdb /cache /signal
 
 USER tinycmdb
 

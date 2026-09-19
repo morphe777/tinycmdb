@@ -952,3 +952,30 @@ a.case-libre:hover {
   background: var(--manuel); color: rgba(255, 255, 255, .9);
   outline: 2px solid var(--manuel); outline-offset: 1px;
 }
+
+/* ------------------------------------------------------------------ collecte à la demande */
+/* Deux boutons et non un : l'inventaire dure quelques secondes, l'analyse des images
+   plusieurs minutes. Les réunir ferait payer le prix du second à qui ne veut que le
+   premier — c'est-à-dire, en pratique, tout le monde. */
+.collecte { display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 20px; flex-wrap: wrap; }
+.collecte-etat { margin: 0; font-size: 13px; color: var(--encre-2);
+                 display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.collecte-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.collecte-actions form { margin: 0; display: flex; flex-direction: column;
+                         align-items: center; gap: 6px; }
+.collecte-actions small { font-size: 11.5px; color: var(--encre-3); text-align: center;
+                          max-width: 190px; }
+.collecte-actions .bouton svg { width: 15px; height: 15px; fill: none;
+                                stroke: currentColor; stroke-width: 1.7;
+                                stroke-linecap: round; stroke-linejoin: round; }
+.collecte-actions .bouton[disabled] { opacity: .5; cursor: default; }
+.collecte-actions .bouton[disabled]:hover { border-color: var(--trait-fort); color: var(--encre-2); }
+.avis { margin: 0 0 14px; padding: 9px 13px; border-radius: 10px; font-size: 13px;
+        background: var(--ok-doux); color: var(--ok); }
+
+@media (max-width: 640px) {
+  .collecte { flex-direction: column; }
+  .collecte-actions { width: 100%; }
+  .collecte-actions form { flex: 1; }
+}

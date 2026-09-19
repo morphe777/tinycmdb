@@ -11,7 +11,7 @@ services:
     # Étiquette de version en plus de `latest` : sans elle, revenir à la version
     # précédente après une régression suppose de la reconstruire, donc de savoir à quel
     # commit — ce qui est précisément ce qu'on n'a plus sous la main ce jour-là.
-    image: ghcr.io/morphe777/tinycmdb:0.1.3
+    image: ghcr.io/morphe777/tinycmdb:0.2.0
     container_name: tinycmdb-collector
     restart: unless-stopped
     env_file:
@@ -22,6 +22,11 @@ services:
       # depuis le répertoire du projet : rien à préparer à la main, le répertoire existe
       # dans l'image avec le bon propriétaire et le volume en hérite.
       - trivy-cache:/cache
+      # Canal console -> collecteur (app/signaux.py) : un fichier vide déposé par la
+      # console, relevé par le collecteur, qui repasse alors sans attendre son intervalle.
+      # Monté dans les deux services, c'est ce qui rend les boutons de la page État
+      # opérants ; sans lui la console le dit et se contente d'afficher l'existant.
+      - signal:/signal
     networks:
       - tinycmdb
     logging:
@@ -34,11 +39,13 @@ services:
   # commande différente : une seule construction, un seul jeu de dépendances.
   web:
     build: .
-    image: ghcr.io/morphe777/tinycmdb:0.1.3
+    image: ghcr.io/morphe777/tinycmdb:0.2.0
     container_name: tinycmdb-console
     restart: unless-stopped
     depends_on:
       - collector
+    volumes:
+      - signal:/signal
     command: ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8080",
               "--no-server-header", "--proxy-headers"]
     env_file:
@@ -68,6 +75,7 @@ services:
 
 volumes:
   trivy-cache:
+  signal:
 
 networks:
   tinycmdb:

@@ -16,7 +16,7 @@
 # reste a une valeur par défaut utilisable.
 
 x-tinycmdb: &tinycmdb
-  image: ghcr.io/morphe777/tinycmdb:0.1.3
+  image: ghcr.io/morphe777/tinycmdb:0.2.0
   restart: unless-stopped
   networks: [tinycmdb]
   logging:
@@ -69,11 +69,16 @@ services:
     container_name: tinycmdb-collector
     volumes:
       - trivy-cache:/cache
+      # Canal console -> collecteur : sans ce volume dans LES DEUX services, les boutons
+      # « collecter maintenant » de la page État restent inertes (la console le signale).
+      - signal:/signal
 
   web:
     <<: *tinycmdb
     container_name: tinycmdb-console
     depends_on: [collector]
+    volumes:
+      - signal:/signal
     command: ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8080",
               "--no-server-header", "--proxy-headers"]
     ports:
@@ -95,6 +100,7 @@ services:
 
 volumes:
   trivy-cache:
+  signal:
 
 networks:
   tinycmdb:

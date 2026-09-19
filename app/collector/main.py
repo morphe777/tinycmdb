@@ -8,6 +8,7 @@ import socket
 import time
 from datetime import datetime, timezone
 
+import signaux
 import version
 
 from . import config
@@ -501,6 +502,25 @@ def run_trivy_pass(client, cfg):
             logger.exception("Scan Trivy de l'image '%s' en échec, image suivante", reference)
 
 
+# Découpage du sommeil entre deux cycles. Le collecteur dort jusqu'à quinze minutes ;
+# une demande venue de la console ne doit pas attendre la fin de ce sommeil, sans quoi le
+# bouton ne vaudrait pas mieux que de patienter. Deux secondes de latence au pire, contre
+# un réveil toutes les deux secondes pour rien le reste du temps — un `stat` sur un
+# fichier absent, c'est le prix qu'on accepte de payer.
+PAS_DE_VEILLE = 2.0
+
+
+def _dormir(duree):
+    fin = time.monotonic() + duree
+    while True:
+        reste = fin - time.monotonic()
+        if reste <= 0:
+            return False
+        if signaux.en_attente():
+            return True
+        time.sleep(min(reste, PAS_DE_VEILLE))
+
+
 def _setup_logging(level):
     logging.basicConfig(level=level, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s")
 
@@ -524,41 +544,75 @@ def main():
     last_node_pass = 0.0
     last_cup_pass = 0.0
     last_trivy_pass = 0.0
+    passes = {}
+    demarre = time.time()
+
+    def etat(en_cours=None, prochain=None):
+        signaux.publier(en_cours=en_cours, passes=passes, demarre=demarre,
+                        prochain=prochain, version=version.VERSION)
+
+    etat(en_cours="démarrage")
 
     while True:
         cycle_start = time.monotonic()
-        due_for_nodes = last_node_pass == 0.0 or (cycle_start - last_node_pass) >= cfg.INTERVAL_NODES
-        due_for_cup = last_cup_pass == 0.0 or (cycle_start - last_cup_pass) >= cfg.INTERVAL_CUP
-        due_for_trivy = last_trivy_pass == 0.0 or (cycle_start - last_trivy_pass) >= cfg.INTERVAL_TRIVY
+        # Relevé AVANT la collecte, jamais après : une demande arrivée pendant le cycle
+        # porte sur un état que celui-ci a déjà lu, elle doit en déclencher un autre.
+        force_inventaire = signaux.consommer("inventaire")
+        force_securite = signaux.consommer("securite")
+        if force_inventaire or force_securite:
+            logger.info("Collecte demandée depuis la console (%s)",
+                        ", ".join(n for n, v in (("inventaire", force_inventaire),
+                                                 ("sécurité", force_securite)) if v))
+
+        due_for_nodes = (last_node_pass == 0.0 or force_inventaire
+                         or (cycle_start - last_node_pass) >= cfg.INTERVAL_NODES)
+        due_for_cup = (last_cup_pass == 0.0 or force_securite
+                       or (cycle_start - last_cup_pass) >= cfg.INTERVAL_CUP)
+        due_for_trivy = (last_trivy_pass == 0.0 or force_securite
+                         or (cycle_start - last_trivy_pass) >= cfg.INTERVAL_TRIVY)
 
         if due_for_nodes:
             logger.info("--- passe nodes/VMs ---")
+            etat(en_cours="nœuds et machines virtuelles")
             node_cache, guest_ip_data = run_node_pass(client, cfg)
+            passes["noeuds"] = time.time()
             logger.info("--- passe IPAM ---")
+            etat(en_cours="adresses IP")
             run_ipam_pass(client, cfg, node_cache, guest_ip_data)
+            passes["ipam"] = time.time()
             last_node_pass = cycle_start
         else:
             node_cache = client.build_cache(cfg.TABLE_NODE, "Name")
 
         logger.info("--- passe conteneurs ---")
+        etat(en_cours="conteneurs")
         cup_targets = run_container_pass(client, cfg, node_cache)
+        passes["conteneurs"] = time.time()
 
         if due_for_cup:
             logger.info("--- passe Cup ---")
+            etat(en_cours="versions disponibles")
             run_cup_pass(client, cfg, cup_targets)
+            passes["cup"] = time.time()
             last_cup_pass = cycle_start
 
         if due_for_trivy:
             logger.info("--- passe Trivy ---")
+            etat(en_cours="vulnérabilités des images")
             run_trivy_pass(client, cfg)
+            passes["trivy"] = time.time()
             last_trivy_pass = cycle_start
 
         if cfg.RUN_ONCE:
             logger.info("RUN_ONCE=true : une seule passe effectuée, sortie")
+            etat()
             break
 
         elapsed = time.monotonic() - cycle_start
-        time.sleep(max(cfg.INTERVAL_CONTAINERS - elapsed, 1))
+        attente = max(cfg.INTERVAL_CONTAINERS - elapsed, 1)
+        etat(prochain=time.time() + attente)
+        if _dormir(attente):
+            logger.info("Sommeil écourté : une collecte est demandée")
 
 
 if __name__ == "__main__":
