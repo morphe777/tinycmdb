@@ -1007,3 +1007,11 @@ a.case-libre:hover {
 .tbl-images td:nth-child(1), .tbl-images td:nth-child(2) { overflow-wrap: anywhere; }
 .tbl-images td:nth-child(1) { max-width: 320px; }
 .tbl-images td:nth-child(2) { max-width: 150px; }
+
+/* Ligne de fiche portant un champ de saisie. Un champ fait deux fois la hauteur d une
+   ligne de texte : sans recentrage, son intitule reste colle en haut et le decalage se
+   voit. La barre de boutons, elle, vit ici hors de la grille du formulaire d edition, ou
+   elle tient sa mise en page — il faut la lui redonner. */
+.fiche tr.ligne-champ th, .fiche tr.ligne-champ td { vertical-align: middle; }
+.fiche tr.ligne-champ td { padding: 10px 0; }
+.bloc > form > .barre-form { margin-top: 14px; }

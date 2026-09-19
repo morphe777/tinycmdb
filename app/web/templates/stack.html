@@ -14,14 +14,26 @@
       <h2>{{ "Modification" if edition else "Déploiement" }}
         {{ m.bouton_modifier(stack, [rattachement] if rattachement and not edition else []) }}
       </h2>
+      {#
+        En modification, la ligne Applications reste une ligne du tableau : le champ prend
+        la place de la valeur, a la meme colonne, avec le meme intitule et le meme filet en
+        dessous. Un formulaire pose sous le tableau, avec ses propres intitules en
+        capitales, faisait deux presentations dans une seule carte — pour un champ.
+      #}
+      {% if edition %}<form method="post" action="/rattacher/stack">
+        <input type="hidden" name="cle" value="{{ stack.key }}">
+        {% if erreur %}
+        <p class="alerte-form" role="alert"><b>Enregistrement refusé.</b> {{ erreur }}</p>
+        {% endif %}
+      {% endif %}
+
       <table class="fiche">
         <tr><th>Hôte</th><td>{% if stack.host %}{{ m.chaine(stack.host) }}{% else %}<span class="vide">—</span>{% endif %}</td></tr>
         <tr><th>Conteneurs</th><td>{{ stack.running }} en marche sur {{ stack.containers|length }}</td></tr>
         {% if stack.compose_path %}
         <tr><th>Chemin</th><td><code>{{ stack.compose_path }}</code></td></tr>
         {% endif %}
-        {% if not edition %}
-        <tr>
+        <tr{{ ' class="ligne-champ"'|safe if edition }}>
           <th>Applications
             {% call m.aide("Rattachement applicatif") %}
               <p>Une stack ne porte pas ce lien : ce sont ses <b>conteneurs</b> qui le
@@ -36,31 +48,22 @@
                 son nom sur son hôte, pas son identifiant Docker.</p>
             {% endcall %}
           </th>
-          <td>{% if stack.apps %}{{ m.liens(stack.apps) }}
-              {% else %}<span class="vide">aucune</span>{% endif %}</td>
+          <td>
+            {% if edition %}
+            <input type="hidden" name="soumis" value="{{ rattachement.champ }}">
+            {{ m.combo(rattachement, 'champ.' ~ rattachement.champ, 'f-applications-stack') }}
+            {% elif stack.apps %}{{ m.liens(stack.apps) }}
+            {% else %}<span class="vide">aucune</span>{% endif %}
+          </td>
         </tr>
-        {% endif %}
       </table>
 
       {% if edition %}
-      {#
-        Le seul champ modifiable d'une stack. Les trois lignes au-dessus décrivent son
-        déploiement, qui n'appartient pas à la CMDB : elles restent en lecture, et le
-        formulaire ne porte que ce qui est à toi. Un seul bouton, en bas, comme sur une
-        fiche — on parcourt, on corrige, on valide une fois.
-      #}
-      <form class="edition" method="post" action="/rattacher/stack">
-        {% if erreur %}
-        <p class="alerte-form" role="alert"><b>Enregistrement refusé.</b> {{ erreur }}</p>
-        {% endif %}
-        <input type="hidden" name="cle" value="{{ stack.key }}">
-        {{ m.champ_saisie(rattachement) }}
         <div class="barre-form">
           <button type="submit" class="bouton bouton-primaire">Enregistrer</button>
           <a class="bouton" href="{{ stack.url }}">Annuler</a>
         </div>
-      </form>
-      {% endif %}
+      </form>{% endif %}
     </section>
 
     <section class="bloc">
