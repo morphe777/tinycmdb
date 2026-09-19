@@ -551,12 +551,18 @@ def main():
     # conteneur, que personne n'ouvre : celui-ci est la même chose, à l'écran, pendant que
     # ça tourne. Borné, parce qu'il montre un cycle en cours et non un historique.
     journal = deque(maxlen=signaux.JOURNAL_MAX)
+    # Vrai pendant toute la durée d'un cycle réclamé depuis la console, faux pour les
+    # passages automatiques. C'est ce qui décide de l'affichage du journal à l'écran : on
+    # ouvre un terminal parce qu'on vient de demander quelque chose, pas pour regarder une
+    # tâche de fond qui tourne de toute façon toutes les quinze minutes.
+    reclame = {"actif": False, "fin": 0.0}
 
     def etat(en_cours=None, prochain=None, note=None):
         if note:
             journal.append({"t": time.time(), "texte": note})
         signaux.publier(en_cours=en_cours, passes=passes, demarre=demarre,
                         prochain=prochain, version=version.VERSION,
+                        demandee=reclame["actif"], demandee_fin=reclame["fin"],
                         journal=list(journal))
 
     etat(en_cours="démarrage", note=f"collecteur démarré — version {version.VERSION}")
@@ -567,6 +573,7 @@ def main():
         # porte sur un état que celui-ci a déjà lu, elle doit en déclencher un autre.
         force_inventaire = signaux.consommer("inventaire")
         force_securite = signaux.consommer("securite")
+        reclame["actif"] = bool(force_inventaire or force_securite)
         if force_inventaire or force_securite:
             demandees = ", ".join(n for n, v in (("inventaire", force_inventaire),
                                                  ("sécurité", force_securite)) if v)
@@ -627,6 +634,12 @@ def main():
 
         elapsed = time.monotonic() - cycle_start
         attente = max(cfg.INTERVAL_CONTAINERS - elapsed, 1)
+        # La fin du cycle réclamé est horodatée plutôt que simplement effacée : la
+        # console garde le journal quelques secondes de plus, sans quoi la dernière ligne —
+        # celle qui annonce la durée — disparaîtrait dans l'instant où elle est écrite.
+        if reclame["actif"]:
+            reclame["fin"] = time.time()
+        reclame["actif"] = False
         etat(prochain=time.time() + attente,
              note=f"cycle terminé en {elapsed:.0f} s — prochain dans {attente / 60:.0f} min")
         if _dormir(attente):

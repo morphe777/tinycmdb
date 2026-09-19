@@ -417,16 +417,32 @@ def recherche(request: Request, q: str = Query("")):
     return render(request, "recherche.html", snap, q=q, results=snap.search(q))
 
 
+# Combien de temps le journal reste affiché après la fin de la collecte qui l'a fait
+# apparaître. Assez pour lire la dernière ligne, celle qui annonce la durée du cycle ;
+# trop peu pour qu'il traîne.
+REMANENCE_JOURNAL = 45
+
+
 def _collecte(demande=""):
     """Ce que la console sait du collecteur : son état publié, et les demandes encore en
     attente. Le canal peut être absent (volume non monté) — la page doit alors se passer
     du bloc plutôt que d'échouer."""
+    import time
+
+    etat = signaux.lire()
+    attente = {p: signaux.demande_posee(p) for p in signaux.PASSES}
+    fin = etat.get("demandee_fin") or 0
     return {
         "canal": signaux.disponible(),
-        "etat": signaux.lire(),
+        "etat": etat,
         "passes": signaux.PASSES,
-        "attente": {p: signaux.demande_posee(p) for p in signaux.PASSES},
+        "attente": attente,
         "demande": demande if demande in signaux.PASSES else "",
+        # Le journal ne se montre que pour une collecte qu'on a réclamée : depuis le clic
+        # jusqu'à la fin du cycle déclenché, remanence comprise. Un passage automatique
+        # n'a rien à dire que personne n'ait demandé.
+        "visible": bool(etat.get("demandee")) or any(attente.values())
+                   or (time.time() - fin) < REMANENCE_JOURNAL,
     }
 
 

@@ -14,7 +14,7 @@
   chaque rechargement.
 #}
 {% block tete %}
-{%- if collecte.canal and (collecte.etat.en_cours or collecte.attente.values()|select|list) %}
+{%- if collecte.canal and collecte.visible %}
 <meta http-equiv="refresh" content="5; url=/etat">
 {%- endif %}
 {% endblock %}
@@ -125,7 +125,13 @@
         visible sans une ligne de script — le rafraichissement recharge la page, et une
         boite qui reviendrait en haut a chaque fois ne servirait a rien.
       #}
-      {% if collecte.etat.journal %}
+      {#
+        Le journal ne s'affiche que pour une collecte qu'on vient de réclamer : depuis le
+        clic jusqu'à la fin du cycle qu'il a déclenché, en passant par l'attente si le
+        collecteur travaillait déjà. Le reste du temps il n'a rien à dire que personne
+        n'ait demandé — le collecteur passe de toute façon toutes les quinze minutes.
+      #}
+      {% if collecte.etat.journal and collecte.visible %}
       <div class="terminal" role="log" aria-label="Journal du collecteur">
         <div class="terminal-tete">
           <span class="terminal-pastille"></span><span class="terminal-pastille"></span><span class="terminal-pastille"></span>
