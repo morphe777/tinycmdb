@@ -31,12 +31,17 @@ logger = logging.getLogger("cmdb.signaux")
 DOSSIER = os.environ.get("SIGNAL_DIR", "/signal")
 
 # Deux passes, et deux seulement, parce que leurs durées n'ont rien de comparable :
-# l'inventaire interroge Proxmox et les socket-proxies (quelques secondes), la sécurité
-# lance Trivy sur chaque image du parc (plusieurs minutes). Les réunir sous un bouton
-# unique ferait attendre dix minutes qui que ce soit venu corriger une adresse IP.
+# l'inventaire interroge Proxmox et les socket-proxies, la sécurité lance Trivy sur chaque
+# image du parc, une par une. Les réunir sous un bouton unique ferait attendre dix minutes
+# qui que ce soit venu corriger une adresse IP.
+#
+# Cup — la comparaison des versions disponibles — figure dans les DEUX. Il ne coûte rien :
+# un seul appel pour tout le parc, une seconde et demie sur trente-deux images. Le ranger
+# derrière le bouton lent obligeait à payer Trivy pour voir qu'une mise à jour vient d'être
+# appliquée, ce qui est précisément la question qu'on se pose en relançant une collecte.
 PASSES = {
-    "inventaire": "nœuds, adresses IP et conteneurs",
-    "securite": "versions disponibles et vulnérabilités des images",
+    "inventaire": "nœuds, adresses IP, conteneurs et versions disponibles",
+    "securite": "vulnérabilités des images — Trivy les analyse une par une",
 }
 
 ETAT = "etat.json"

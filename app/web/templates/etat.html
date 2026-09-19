@@ -91,11 +91,14 @@
         <p>Le collecteur repasse de lui-même à intervalle fixe. Ces deux boutons lui
           demandent de repasser <b>tout de suite</b> — après avoir corrigé quelque chose
           dans l'infrastructure, plutôt que d'attendre le prochain cycle.</p>
-        <p><b>Inventaire</b> — nœuds, machines virtuelles, adresses IP et conteneurs.
-          Quelques secondes : ce sont des appels à Proxmox et aux socket-proxies.</p>
-        <p><b>Images</b> — versions disponibles (Cup) puis vulnérabilités (Trivy). Trivy
-          analyse le contenu de chaque image du parc, une par une : comptez plusieurs
-          minutes. C'est la raison d'être de deux boutons plutôt qu'un.</p>
+        <p><b>Inventaire</b> — nœuds, machines virtuelles, adresses IP, conteneurs, et
+          les versions disponibles. Quelques secondes : des appels à Proxmox et aux
+          socket-proxies, plus une seule interrogation des registres pour tout le parc.
+          C'est le bouton à utiliser après avoir mis une image à jour.</p>
+        <p><b>Images</b> — les vulnérabilités. Trivy analyse le contenu de chaque image du
+          parc, une par une : comptez plusieurs minutes. C'est la raison d'être de deux
+          boutons plutôt qu'un. Les versions disponibles y sont rafraîchies aussi, au
+          passage.</p>
         <p>La demande est déposée, pas exécutée dans la page : le collecteur la relève dans
           les deux secondes et travaille à son rythme. Rechargez cette page pour suivre son
           avancement. Une demande posée pendant que le collecteur est arrêté sera honorée à

@@ -566,7 +566,10 @@ def main():
 
         due_for_nodes = (last_node_pass == 0.0 or force_inventaire
                          or (cycle_start - last_node_pass) >= cfg.INTERVAL_NODES)
-        due_for_cup = (last_cup_pass == 0.0 or force_securite
+        # Cup suit les deux demandes : il ne coûte qu'un appel pour tout le parc, et
+        # « ma mise à jour a-t-elle été prise en compte » est la question qu'on se pose en
+        # relançant une collecte. La faire attendre Trivy n'aurait servi personne.
+        due_for_cup = (last_cup_pass == 0.0 or force_inventaire or force_securite
                        or (cycle_start - last_cup_pass) >= cfg.INTERVAL_CUP)
         due_for_trivy = (last_trivy_pass == 0.0 or force_securite
                          or (cycle_start - last_trivy_pass) >= cfg.INTERVAL_TRIVY)

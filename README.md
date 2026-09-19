@@ -486,9 +486,13 @@ laptop changes address.
 for containers, 24 hours for Trivy. After fixing something in the
 infrastructure, waiting for the next cycle to confirm it is the tool's most
 tiresome daily flaw. The **State** screen carries two buttons for that:
-*inventory* (nodes, addresses, containers — seconds) and *images* (available
-versions, then Trivy on every image — minutes). Two and not one: merging them
-would charge several minutes to anyone who just corrected an IP address.
+*inventory* (nodes, addresses, containers, and available versions — seconds) and
+*images* (Trivy on every image, one by one — minutes). Two and not one: merging
+them would charge several minutes to anyone who just corrected an IP address.
+
+Cup — the available-version check — sits in **both**. It costs one call for the
+whole park, 1.4 seconds on 32 images, and "did my update land?" is exactly the
+question you ask when you trigger a collection by hand.
 
 The two containers have no network link, so the channel is a shared directory
 and empty files: the console drops a request, the collector picks it up within
