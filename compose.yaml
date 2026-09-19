@@ -11,7 +11,7 @@ services:
     # Étiquette de version en plus de `latest` : sans elle, revenir à la version
     # précédente après une régression suppose de la reconstruire, donc de savoir à quel
     # commit — ce qui est précisément ce qu'on n'a plus sous la main ce jour-là.
-    image: ghcr.io/morphe777/tinycmdb:0.2.4
+    image: ghcr.io/morphe777/tinycmdb:0.2.5
     container_name: tinycmdb-collector
     # Le nom d'hôte, que Docker fixerait sinon à l'identifiant du conteneur. C'est par lui
     # que `outils/maj.py` reconnaît sa propre stack, pour la redéployer en dernier plutôt
@@ -43,7 +43,7 @@ services:
   # commande différente : une seule construction, un seul jeu de dépendances.
   web:
     build: .
-    image: ghcr.io/morphe777/tinycmdb:0.2.4
+    image: ghcr.io/morphe777/tinycmdb:0.2.5
     container_name: tinycmdb-console
     restart: unless-stopped
     depends_on:
