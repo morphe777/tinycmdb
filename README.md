@@ -462,6 +462,19 @@ set of dependencies, and no way for the two to drift apart.
 docker compose up -d web
 ```
 
+**Attaching applications in bulk.** An application is not linked to a *stack*
+anywhere: the link is carried by each **container** (`Application - Stack`), and
+a stack counts as attached as soon as one of its containers is. Fixing that one
+container at a time is exact and tedious. So the link is editable from both ends
+— from a stack, pick the applications it serves; from an application, tick the
+stacks it runs on. Unticking a stack removes *that* application and no other: a
+container may serve several, and dropping them all would be the kind of silent
+loss this console exists to prevent.
+
+The **State** screen lists the stacks attached to nothing. It is not a collector
+fault, it is a gap in the inventory — and it has a consequence: criticality comes
+from the application, so a stack without one is never updated automatically.
+
 **Collect now (`app/signaux.py`).** The collector runs on a timer — 15 minutes
 for containers, 24 hours for Trivy. After fixing something in the
 infrastructure, waiting for the next cycle to confirm it is the tool's most

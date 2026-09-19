@@ -439,6 +439,66 @@ def _derives(snap, kind, valeurs):
     return forces
 
 
+# ------------------------------------------------- rattachement applicatif, par lot
+#
+# Le lien entre une application et une stack n'existe nulle part en tant que tel : il est
+# porté par chacun des conteneurs (`Application - Stack`), et une stack est dite rattachée
+# dès qu'un seul des siens l'est. Corriger cela conteneur par conteneur est exact et
+# pénible — trois gestes pour une stack de trois services, et rien à l'écran ne dit que
+# les trois devraient s'accorder.
+#
+# D'où ces deux opérations. Elles écrivent le même champ, dans les deux sens où l'on
+# raisonne : depuis la stack on désigne ce qu'elle sert, depuis l'application on coche où
+# elle tourne. Aucune notion nouvelle, aucune règle relâchée — le champ reste soumis à
+# `schema.editable`, seul change le nombre de lignes touchées d'un coup.
+
+CHAMP_APPLICATION = "Application - Stack"
+
+Cible = namedtuple("Cible", "id name")
+
+
+def rattachement_ouvert():
+    """Le rattachement est-il modifiable ? Même question, même réponse que partout
+    ailleurs : c'est `schema` qui décide, pas ce module."""
+    return schema.editable("container", CHAMP_APPLICATION)
+
+
+def champ_applications(snap, stack):
+    """Descripteur prêt pour le sélecteur : toutes les applications, celles de la stack
+    cochées."""
+    return {
+        "champ": CHAMP_APPLICATION,
+        "widget": "lien:application",
+        "libelle": "Applications servies",
+        "notice": None,
+        "valeur": sorted(a.id for a in stack.apps),
+        "options": [],
+        "cibles": cibles(snap, "application"),
+    }
+
+
+def champ_stacks(snap, app):
+    """Descripteur prêt pour le sélecteur : toutes les stacks, celles de l'application
+    cochées.
+
+    `id` porte ici la clé de la stack — hôte et nom — et non un identifiant Baserow : une
+    stack n'est pas une ligne, c'est un regroupement de conteneurs. Deux hôtes peuvent
+    porter une stack de même nom, les trois socket-proxies en sont l'exemple, et seule la
+    clé les distingue.
+    """
+    retenues = {s.key for s in snap.stacks if any(app.id == a.id for a in s.apps)}
+    return {
+        "champ": "stack",
+        "widget": "lien:stack",
+        "libelle": "Stacks de cette application",
+        "notice": None,
+        "valeur": sorted(retenues),
+        "options": [],
+        "cibles": [Cible(s.key, f"{s.name} · {s.host.name if s.host else '?'}")
+                   for s in sorted(snap.stacks, key=lambda s: s.key.lower())],
+    }
+
+
 class Redacteur:
     """Applique une saisie à une ligne Baserow. Crée sur Ipam et Application, jamais
     ailleurs ; ne supprime nulle part."""
@@ -477,6 +537,76 @@ class Redacteur:
 
         logger.info("création %s#%s %s=%r", kind, ligne.get("id"), cle, valeurs[cle])
         return ligne["id"]
+
+    # -- rattachement applicatif --------------------------------------------
+
+    def _poser_rattachement(self, conteneur, ids):
+        try:
+            self.client.update_row(self.cfg.TABLES["container"], conteneur.id,
+                                   {CHAMP_APPLICATION: ids})
+        except Exception as exc:
+            logger.exception("Rattachement refusé par Baserow sur conteneur#%s", conteneur.id)
+            raise EcritureImpossible(_motif(exc)) from exc
+        logger.info("rattachement conteneur#%s %s -> %r", conteneur.id, conteneur.name, ids)
+
+    def rattacher_stack(self, snap, stack, donnees):
+        """Depuis la stack : pose le même rattachement sur tous ses conteneurs.
+
+        Remplacement et non ajout : dire ce que sert une stack, c'est dire ce qu'elle sert
+        *entièrement*. Renvoie le nombre de conteneurs réellement écrits — les autres
+        portaient déjà la bonne valeur, et les réécrire n'aurait produit que du bruit dans
+        l'horodatage de modification.
+        """
+        if not rattachement_ouvert():
+            raise EcritureRefusee("Le rattachement applicatif n'est pas modifiable.")
+        if CHAMP_APPLICATION not in set(donnees.getlist("soumis")):
+            raise EcritureRefusee("Formulaire incomplet.")
+
+        ids = _valider(snap, "container", CHAMP_APPLICATION, "lien:application",
+                       None, donnees.getlist("champ." + CHAMP_APPLICATION))
+        ecrits = 0
+        for conteneur in stack.containers:
+            if _actuel(conteneur, CHAMP_APPLICATION, "lien:application") == ids:
+                continue
+            self._poser_rattachement(conteneur, ids)
+            ecrits += 1
+        return ecrits
+
+    def rattacher_application(self, snap, app, donnees):
+        """Depuis l'application : coche les stacks où elle tourne.
+
+        Une stack décochée perd CETTE application, pas les autres qu'elle porterait. Un
+        conteneur peut en servir plusieurs ; les effacer toutes parce qu'on en retire une
+        serait une perte silencieuse — précisément ce contre quoi cette console existe.
+
+        Les conteneurs hors stack ne sont pas concernés : cet écran parle de stacks, et ce
+        qu'il ne montre pas, il ne le touche pas.
+        """
+        if not rattachement_ouvert():
+            raise EcritureRefusee("Le rattachement applicatif n'est pas modifiable.")
+        if "stack" not in set(donnees.getlist("soumis")):
+            raise EcritureRefusee("Formulaire incomplet.")
+
+        connues = {s.key: s for s in snap.stacks}
+        choisies = {c for c in donnees.getlist("champ.stack") if c}
+        inconnues = choisies - set(connues)
+        if inconnues:
+            raise EcritureRefusee(
+                "Stacks inconnues : " + ", ".join(sorted(inconnues))
+                + ". La page a peut-être changé depuis son ouverture.")
+
+        ecrits = 0
+        for cle, stack in connues.items():
+            voulu = cle in choisies
+            for conteneur in stack.containers:
+                actuel = _actuel(conteneur, CHAMP_APPLICATION, "lien:application")
+                if (app.id in actuel) == voulu:
+                    continue
+                nouveau = sorted(set(actuel) | {app.id}) if voulu \
+                    else sorted(set(actuel) - {app.id})
+                self._poser_rattachement(conteneur, nouveau)
+                ecrits += 1
+        return ecrits
 
     # -- modification --------------------------------------------------------
 

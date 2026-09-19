@@ -7,6 +7,8 @@
 <div class="page">
   <p class="fil"><a href="/stacks">Stacks</a> › projet Compose</p>
   <h1><span class="stack-glyphe grand" aria-hidden="true"></span>{{ stack.name }}</h1>
+  {% if erreur %}<p class="bandeau bandeau-ko" role="alert"><b>Rattachement refusé.</b> {{ erreur }}</p>{% endif %}
+  {{ m.rattachement_rendu(rattaches) }}
 
   <div class="deux-colonnes">
     <section class="bloc">
@@ -17,9 +19,29 @@
         {% if stack.compose_path %}
         <tr><th>Chemin</th><td><code>{{ stack.compose_path }}</code></td></tr>
         {% endif %}
-        {% if stack.apps %}
-        <tr><th>Applications</th><td>{{ m.liens(stack.apps) }}</td></tr>
-        {% endif %}
+        <tr>
+          <th>Applications
+            {% call m.aide("Rattachement applicatif") %}
+              <p>Une stack ne porte pas ce lien : ce sont ses <b>conteneurs</b> qui le
+                portent, chacun de leur côté. Ce sélecteur le pose sur tous en une fois,
+                ce qui évite d'ouvrir trois fiches pour une stack de trois services.</p>
+              <p>C'est aussi ce lien qui décide de la mise à jour automatique
+                hebdomadaire : la criticité vient de l'application, pas de la stack. Une
+                stack sans application n'est jamais mise à jour toute seule, faute de
+                consigne.</p>
+              <p>Le rattachement survit aux redéploiements : la clé d'un conteneur est
+                son nom sur son hôte, pas son identifiant Docker.</p>
+            {% endcall %}
+          </th>
+          <td>
+            {% if rattachement %}
+            {{ m.rattachement('/rattacher/stack', rattachement, 'combo-stack-apps',
+                              {'cle': stack.key}) }}
+            {% else %}
+            {{ m.liens(stack.apps) }}
+            {% endif %}
+          </td>
+        </tr>
       </table>
     </section>
 

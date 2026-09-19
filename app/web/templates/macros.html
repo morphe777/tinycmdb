@@ -427,3 +427,29 @@
 </a>
 {% endif -%}
 {%- endmacro %}
+
+
+{#
+  Rattachement applicatif. Le lien est porté par les conteneurs ; ce formulaire le pose
+  sur tous ceux d'une stack, ou sur toutes les stacks d'une application, selon le côté
+  d'où on l'aborde. Le sélecteur est exactement celui des fiches — même filtre, même
+  comportement : deux écrans qui font la même chose doivent se manipuler pareil.
+#}
+{% macro rattachement(action, c, cid, caches={}) -%}
+<form class="rattachement" method="post" action="{{ action }}">
+  {% for clef, valeur in caches.items() %}
+  <input type="hidden" name="{{ clef }}" value="{{ valeur }}">
+  {% endfor %}
+  <input type="hidden" name="soumis" value="{{ c.champ }}">
+  {{ combo(c, 'champ.' ~ c.champ, cid) }}
+  <button class="bouton bouton-primaire" type="submit">Enregistrer</button>
+</form>
+{%- endmacro %}
+
+{% macro rattachement_rendu(n) -%}
+{%- if n > 0 %}
+<p class="bandeau bandeau-ok">{{ n }} conteneur{{ 's' if n > 1 }} rattaché{{ 's' if n > 1 }}.</p>
+{%- elif n == 0 %}
+<p class="bandeau">Aucun changement : le rattachement était déjà celui-là.</p>
+{%- endif -%}
+{%- endmacro %}

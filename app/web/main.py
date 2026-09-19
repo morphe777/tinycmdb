@@ -15,7 +15,7 @@ Démarrage : `uvicorn web.main:app --host 0.0.0.0 --port 8080` (voir compose.yam
 
 import logging
 from pathlib import Path
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -203,7 +203,7 @@ def origine_uniforme(rows):
 
 
 def _detail(request, kind, obj_id, edition=False, erreur=None, enregistres=0,
-            saisie=None, code=200, cree=0):
+            saisie=None, code=200, cree=0, rattaches=-1):
     snap = snapshot()
     obj = snap.get(kind, obj_id)
     if obj is None:
@@ -216,9 +216,14 @@ def _detail(request, kind, obj_id, edition=False, erreur=None, enregistres=0,
     if saisie is not None:
         for descr in champs:
             descr["valeur"] = saisie.get(descr["champ"], descr["valeur"])
+    # Le rattachement aux stacks n'est pas un champ de la ligne Application : il est porté
+    # par les conteneurs. Il a donc son propre formulaire, et seulement sur cette fiche.
+    rattachement = ecriture.champ_stacks(snap, obj) \
+        if kind == "application" and ecriture.rattachement_ouvert() else None
     return render(request, "fiche.html", snap, obj=obj, rows=rows,
                   origine_commune=origine_uniforme(rows),
                   champs=champs, edition=bool(edition and champs),
+                  rattachement=rattachement, rattaches=rattaches,
                   erreur=erreur, enregistres=enregistres, cree=cree, status_code=code)
 
 
@@ -324,12 +329,16 @@ def stacks(request: Request):
 
 
 @app.get("/stack/{key:path}")
-def stack_detail(request: Request, key: str):
+def stack_detail(request: Request, key: str, rattaches: int = Query(-1),
+                 erreur: str = Query("")):
     snap = snapshot()
     stack = snap.stacks_by_key.get(key)
     if stack is None:
         raise HTTPException(status_code=404, detail="stack introuvable")
-    return render(request, "stack.html", snap, stack=stack)
+    return render(request, "stack.html", snap, stack=stack,
+                  rattachement=ecriture.champ_applications(snap, stack)
+                  if ecriture.rattachement_ouvert() else None,
+                  rattaches=rattaches, erreur=erreur)
 
 
 @app.get("/ipam")
@@ -404,6 +413,11 @@ def etat(request: Request, demande: str = Query("")):
     return render(request, "etat.html", snap, sources=snap.sources_state(),
                   expiring=snap.expiring(), composants=composants,
                   collecte=_collecte(demande),
+                  # Une stack sans application n'est pas une anomalie du collecteur : c'est
+                  # une saisie qui manque. Elle a pourtant sa place ici, sur l'écran qu'on
+                  # ouvre pour savoir si l'inventaire est fiable — et la conséquence est
+                  # concrète, cette stack ne se met jamais à jour toute seule.
+                  orphelines=[st for st in snap.stacks if not st.apps],
                   en_defaut=[c for c in composants if c["verdict"] in ("warn", "ko")])
 
 
@@ -434,9 +448,10 @@ def ip_detail(request: Request, obj_id: int, edition: int = Query(0),
 
 @app.get("/application/{obj_id}")
 def application_detail(request: Request, obj_id: int, edition: int = Query(0),
-                       enregistres: int = Query(-1), cree: int = Query(0)):
+                       enregistres: int = Query(-1), cree: int = Query(0),
+                       rattaches: int = Query(-1)):
     return _detail(request, "application", obj_id, edition=edition, enregistres=enregistres,
-                   cree=cree)
+                   cree=cree, rattaches=rattaches)
 
 
 @app.post("/modifier/{prefixe}/{obj_id}")
@@ -555,6 +570,50 @@ def rafraichir(request: Request):
         if parsed.path.startswith("/"):
             retour = urlunsplit(("", "", parsed.path, parsed.query, ""))
     return RedirectResponse(retour, status_code=303)
+
+
+@app.post("/rattacher/stack")
+async def rattacher_stack(request: Request):
+    """Pose les applications servies sur tous les conteneurs d'une stack.
+
+    La clé de la stack voyage dans le formulaire et non dans le chemin : elle contient une
+    barre oblique (hôte/nom), et la faire traverser une route la rendrait ambiguë pour un
+    gain nul.
+    """
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    donnees = await _formulaire(request)
+    snap = snapshot()
+    stack = snap.stacks_by_key.get(donnees.get("cle") or "")
+    if stack is None:
+        raise HTTPException(status_code=404, detail="stack introuvable")
+    try:
+        ecrits = redacteur.rattacher_stack(snap, stack, donnees)
+    except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
+        return RedirectResponse(f"{stack.url}?erreur={quote(str(exc))}", status_code=303)
+    if ecrits:
+        snapshot(force=True)
+    return RedirectResponse(f"{stack.url}?rattaches={ecrits}", status_code=303)
+
+
+@app.post("/rattacher/application/{obj_id}")
+async def rattacher_application(request: Request, obj_id: int):
+    """Pose cette application sur les conteneurs des stacks cochées, et la retire des
+    autres — elle seule, jamais les applications voisines."""
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    donnees = await _formulaire(request)
+    snap = snapshot()
+    app_obj = snap.get("application", obj_id)
+    if app_obj is None:
+        raise HTTPException(status_code=404, detail="application introuvable")
+    try:
+        ecrits = redacteur.rattacher_application(snap, app_obj, donnees)
+    except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
+        return _detail(request, "application", obj_id, erreur=str(exc), code=400)
+    if ecrits:
+        snapshot(force=True)
+    return RedirectResponse(f"/application/{obj_id}?rattaches={ecrits}", status_code=303)
 
 
 @app.post("/collecter/{passe}")

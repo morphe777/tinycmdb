@@ -979,3 +979,15 @@ a.case-libre:hover {
   .collecte-actions { width: 100%; }
   .collecte-actions form { flex: 1; }
 }
+
+/* ------------------------------------------------------------------ rattachement applicatif */
+/* Posé dans une cellule de fiche, à la place de la liste qu'il remplace : le lien se
+   corrige là où on vient de le lire, sans changer d'écran ni de mode. */
+.rattachement { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.rattachement .combo { flex: 1 1 220px; min-width: 0; }
+.rattachement .bouton { flex: 0 0 auto; padding: 7px 13px; font-size: 12.5px; }
+
+.bandeau-ko {
+  background: var(--crit-doux); color: var(--crit);
+  border-color: color-mix(in srgb, var(--crit) 30%, transparent);
+}

@@ -134,6 +134,37 @@
   </section>
 
   <section class="bloc">
+    <h2>Stacks sans application <span class="compte">{{ orphelines|length }}</span>
+      {% call m.aide("Stacks sans application") %}
+        <p>Une stack qui n'est rattachée à aucune application est un trou dans
+          l'inventaire : rien ne dit à quoi elle sert, ni ce qu'on casse en l'arrêtant.</p>
+        <p>La conséquence est concrète — la criticité vient de l'application. Une stack
+          sans application n'en a donc aucune, et la mise à jour automatique
+          hebdomadaire la laisse de côté faute de consigne.</p>
+        <p>Le rattachement se pose depuis la fiche de la stack, sur tous ses conteneurs
+          en une fois.</p>
+      {% endcall %}
+    </h2>
+    {% if not orphelines %}
+      <p class="rien">Toutes les stacks sont rattachées à une application.</p>
+    {% else %}
+    <table class="tbl">
+      <thead><tr><th>Stack</th><th>Hôte</th><th class="num">Conteneurs</th><th>Chemin</th></tr></thead>
+      <tbody>
+      {% for st in orphelines %}
+      <tr>
+        <td>{{ m.stack_lien(st) }}</td>
+        <td>{% if st.host %}{{ m.chaine(st.host) }}{% else %}<span class="vide">—</span>{% endif %}</td>
+        <td class="num">{{ st.containers|length }}</td>
+        <td>{% if st.compose_path %}<code>{{ st.compose_path }}</code>{% else %}<span class="vide">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <section class="bloc">
     <h2>Sources
       {% call m.aide("Lecture de ce tableau") %}
         <p>Le collecteur ne publie pas son état. Celui-ci est déduit de la date de dernière
