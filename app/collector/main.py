@@ -6,6 +6,7 @@ import ipaddress
 import logging
 import socket
 import time
+from collections import deque
 from datetime import datetime, timezone
 
 import signaux
@@ -546,12 +547,19 @@ def main():
     last_trivy_pass = 0.0
     passes = {}
     demarre = time.time()
+    # Le journal publié à la console. Le collecteur écrit déjà dans le journal du
+    # conteneur, que personne n'ouvre : celui-ci est la même chose, à l'écran, pendant que
+    # ça tourne. Borné, parce qu'il montre un cycle en cours et non un historique.
+    journal = deque(maxlen=signaux.JOURNAL_MAX)
 
-    def etat(en_cours=None, prochain=None):
+    def etat(en_cours=None, prochain=None, note=None):
+        if note:
+            journal.append({"t": time.time(), "texte": note})
         signaux.publier(en_cours=en_cours, passes=passes, demarre=demarre,
-                        prochain=prochain, version=version.VERSION)
+                        prochain=prochain, version=version.VERSION,
+                        journal=list(journal))
 
-    etat(en_cours="démarrage")
+    etat(en_cours="démarrage", note=f"collecteur démarré — version {version.VERSION}")
 
     while True:
         cycle_start = time.monotonic()
@@ -560,9 +568,10 @@ def main():
         force_inventaire = signaux.consommer("inventaire")
         force_securite = signaux.consommer("securite")
         if force_inventaire or force_securite:
-            logger.info("Collecte demandée depuis la console (%s)",
-                        ", ".join(n for n, v in (("inventaire", force_inventaire),
-                                                 ("sécurité", force_securite)) if v))
+            demandees = ", ".join(n for n, v in (("inventaire", force_inventaire),
+                                                 ("sécurité", force_securite)) if v)
+            logger.info("Collecte demandée depuis la console (%s)", demandees)
+            etat(en_cours="démarrage", note=f"collecte demandée depuis la console : {demandees}")
 
         due_for_nodes = (last_node_pass == 0.0 or force_inventaire
                          or (cycle_start - last_node_pass) >= cfg.INTERVAL_NODES)
@@ -576,11 +585,13 @@ def main():
 
         if due_for_nodes:
             logger.info("--- passe nodes/VMs ---")
-            etat(en_cours="nœuds et machines virtuelles")
+            etat(en_cours="nœuds et machines virtuelles", note="nœuds et machines virtuelles…")
             node_cache, guest_ip_data = run_node_pass(client, cfg)
             passes["noeuds"] = time.time()
+            etat(en_cours="nœuds et machines virtuelles",
+                 note=f"{len(node_cache)} nœuds inventoriés")
             logger.info("--- passe IPAM ---")
-            etat(en_cours="adresses IP")
+            etat(en_cours="adresses IP", note="adresses IP…")
             run_ipam_pass(client, cfg, node_cache, guest_ip_data)
             passes["ipam"] = time.time()
             last_node_pass = cycle_start
@@ -588,23 +599,26 @@ def main():
             node_cache = client.build_cache(cfg.TABLE_NODE, "Name")
 
         logger.info("--- passe conteneurs ---")
-        etat(en_cours="conteneurs")
+        etat(en_cours="conteneurs", note="conteneurs et images…")
         cup_targets = run_container_pass(client, cfg, node_cache)
         passes["conteneurs"] = time.time()
+        etat(en_cours="conteneurs", note=f"{len(cup_targets)} images distinctes en service")
 
         if due_for_cup:
             logger.info("--- passe Cup ---")
-            etat(en_cours="versions disponibles")
+            etat(en_cours="versions disponibles", note="comparaison des versions publiées…")
             run_cup_pass(client, cfg, cup_targets)
             passes["cup"] = time.time()
             last_cup_pass = cycle_start
 
         if due_for_trivy:
             logger.info("--- passe Trivy ---")
-            etat(en_cours="vulnérabilités des images")
+            etat(en_cours="vulnérabilités des images",
+                 note="analyse des vulnérabilités, image par image…")
             run_trivy_pass(client, cfg)
             passes["trivy"] = time.time()
             last_trivy_pass = cycle_start
+            etat(en_cours="vulnérabilités des images", note="analyse terminée")
 
         if cfg.RUN_ONCE:
             logger.info("RUN_ONCE=true : une seule passe effectuée, sortie")
@@ -613,7 +627,8 @@ def main():
 
         elapsed = time.monotonic() - cycle_start
         attente = max(cfg.INTERVAL_CONTAINERS - elapsed, 1)
-        etat(prochain=time.time() + attente)
+        etat(prochain=time.time() + attente,
+             note=f"cycle terminé en {elapsed:.0f} s — prochain dans {attente / 60:.0f} min")
         if _dormir(attente):
             logger.info("Sommeil écourté : une collecte est demandée")
 

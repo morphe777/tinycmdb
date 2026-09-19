@@ -94,6 +94,16 @@ def _fmt_int(value):
         return value
 
 
+def _fmt_heure(value):
+    """Heure seule, pour le journal du collecteur : la date y serait la même sur toutes
+    les lignes, et ce qu'on y lit est un enchaînement, pas un calendrier."""
+    from datetime import datetime
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value).strftime("%H:%M:%S")
+    return value.astimezone().strftime("%H:%M:%S") if value else ""
+
+
+templates.env.filters["heure"] = _fmt_heure
 templates.env.filters["datefr"] = _fmt_datetime
 templates.env.filters["ago"] = _fmt_age
 templates.env.filters["hours"] = _fmt_hours

@@ -1064,3 +1064,63 @@ a.case-libre:hover {
 @media (max-width: 560px) {
   .entete-page .bouton { margin-left: 0; width: 100%; justify-content: center; }
 }
+
+/* ------------------------------------------------------------------ journal du collecteur */
+/* Un terminal, parce que c'en est un : une suite d'evenements horodates qui s'empile. Le
+   fond reste sombre dans les deux themes — c'est ce qui le designe comme un terminal, et
+   un terminal clair n'evoque rien.
+
+   `column-reverse` avec les lignes en ordre inverse : la derniere reste visible en bas
+   sans une ligne de script, y compris apres le rafraichissement automatique de la page.
+   Une boite qui reviendrait en haut toutes les cinq secondes ne servirait a rien. */
+.terminal {
+  margin: 0 0 18px; border-radius: 11px; overflow: hidden;
+  background: #14161c; border: 1px solid #262a35;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+.terminal-tete {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; background: #1b1e26; border-bottom: 1px solid #262a35;
+}
+.terminal-pastille { width: 9px; height: 9px; border-radius: 50%; background: #3a404e; }
+.terminal-pastille:first-child { background: #b8524a; }
+.terminal-pastille:nth-child(2) { background: #b8924a; }
+.terminal-pastille:nth-child(3) { background: #4a8b5a; }
+.terminal-titre {
+  margin-left: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: #6b7280;
+}
+.terminal-corps {
+  display: flex; flex-direction: column-reverse;
+  max-height: 168px; overflow-y: auto;
+  padding: 10px 14px 12px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.75;
+}
+.terminal-corps p { margin: 0; display: flex; gap: 9px; align-items: baseline; }
+.terminal-heure { color: #565e6e; flex: none; font-variant-numeric: tabular-nums; }
+.terminal-invite { color: #4a8b5a; flex: none; }
+.terminal-texte { color: #c3c9d4; overflow-wrap: anywhere; }
+
+/* La ligne en cours : plus claire, et un curseur qui bat pour dire que ca travaille. */
+.terminal-actif .terminal-texte { color: #eef1f6; }
+.terminal-actif .terminal-texte::after {
+  content: "▌"; margin-left: 3px; color: #4a8b5a; animation: terminal-curseur 1.1s step-end infinite;
+}
+@keyframes terminal-curseur { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .terminal-actif .terminal-texte::after { animation: none; }
+}
+
+.terminal-corps::-webkit-scrollbar { width: 9px; }
+.terminal-corps::-webkit-scrollbar-thumb { background: #2f3542; border-radius: 6px; }
+.terminal-corps::-webkit-scrollbar-track { background: transparent; }
+
+/* En theme sombre, la carte est deja sombre : le terminal s'y fondait et cessait de se
+   lire comme un objet a part. Il descend donc plus bas que son support, et sa bordure
+   remonte — c'est le creux qui le designe, pas la couleur. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .terminal { background: #0a0c10; border-color: #303642; }
+  :root:not([data-theme="light"]) .terminal-tete { background: #11141b; border-bottom-color: #303642; }
+}
+:root[data-theme="dark"] .terminal { background: #0a0c10; border-color: #303642; }
+:root[data-theme="dark"] .terminal-tete { background: #11141b; border-bottom-color: #303642; }

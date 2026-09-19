@@ -118,11 +118,39 @@
       <p class="avis">Collecte demandée : {{ collecte.passes[collecte.demande] }}.</p>
       {% endif %}
 
+      {#
+        Le journal du collecteur, tel qu'il le publie. Presente comme un terminal parce
+        que c'en est un : une suite d'evenements horodates qui s'empile, qu'on lit du
+        coin de l'oeil pendant que ca tourne. La colonne inversee garde la derniere ligne
+        visible sans une ligne de script — le rafraichissement recharge la page, et une
+        boite qui reviendrait en haut a chaque fois ne servirait a rien.
+      #}
+      {% if collecte.etat.journal %}
+      <div class="terminal" role="log" aria-label="Journal du collecteur">
+        <div class="terminal-tete">
+          <span class="terminal-pastille"></span><span class="terminal-pastille"></span><span class="terminal-pastille"></span>
+          <span class="terminal-titre">collecteur</span>
+        </div>
+        <div class="terminal-corps">
+          {% for l in collecte.etat.journal|reverse %}
+          <p{{ ' class="terminal-actif"'|safe if loop.first and collecte.etat.en_cours }}>
+            <span class="terminal-heure">{{ l.t|heure }}</span>
+            <span class="terminal-invite">›</span>
+            <span class="terminal-texte">{{ l.texte }}</span>
+          </p>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
       <div class="collecte">
         <p class="collecte-etat">
+          {#
+            Ce que fait le collecteur est ecrit dans le journal juste au-dessus, avec son
+            heure : le repeter ici ne ferait que deux endroits a tenir d'accord.
+          #}
           {% if collecte.etat.en_cours %}
             <span class="badge badge-neutre">en cours</span>
-            Le collecteur traite : <b>{{ collecte.etat.en_cours }}</b>.
           {% elif collecte.etat.maj %}
             <span class="badge badge-ok">au repos</span>
             Dernier cycle terminé {{ collecte.etat.maj|ago }}.

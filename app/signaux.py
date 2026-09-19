@@ -46,6 +46,11 @@ PASSES = {
 
 ETAT = "etat.json"
 
+# Nombre de lignes de journal conservées. De quoi couvrir un cycle entier avec ses passes
+# lentes, et pas davantage : ce n'est pas un historique, c'est ce que le collecteur est en
+# train de faire. Les journaux du conteneur gardent le reste.
+JOURNAL_MAX = 40
+
 
 def _chemin(nom):
     return os.path.join(DOSSIER, nom)
