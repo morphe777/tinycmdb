@@ -2,6 +2,23 @@
 {% import "macros.html" as m with context %}
 {% block titre %}État du collecteur{% endblock %}
 
+{#
+  Rafraichissement automatique, et seulement tant qu'il se passe quelque chose : une
+  collecte en cours ou une demande pas encore relevee. Des que le collecteur est au repos,
+  la page cesse de se recharger — une page qui clignote indefiniment finit par etre
+  fermee, et celle-ci sert a surveiller, pas a occuper l'ecran.
+
+  Un `meta refresh` plutot qu'un script : la console entiere tient sans JavaScript, et
+  attendre la fin d'une collecte n'est pas l'endroit ou commencer a en dependre. La cible
+  est /etat sans parametre, pour que le bandeau « collecte demandee » ne se rejoue pas a
+  chaque rechargement.
+#}
+{% block tete %}
+{%- if collecte.canal and (collecte.etat.en_cours or collecte.attente.values()|select|list) %}
+<meta http-equiv="refresh" content="5; url=/etat">
+{%- endif %}
+{% endblock %}
+
 {% block contenu %}
 <div class="page">
   <h1>État du collecteur</h1>
