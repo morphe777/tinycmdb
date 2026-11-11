@@ -5,6 +5,7 @@ démarrage tout de suite (fail-fast), pas au milieu d'une passe.
 """
 
 import os
+from pathlib import Path
 
 
 class ConfigError(Exception):
@@ -56,19 +57,17 @@ def _parse_docker_hosts(raw):
 def load():
     cfg = Config()
 
-    cfg.BASEROW_URL = os.environ.get("BASEROW_URL", "").rstrip("/")
-    cfg.BASEROW_TOKEN = os.environ.get("BASEROW_TOKEN", "")
-    cfg.BASEROW_VERIFY_TLS = _get_bool("BASEROW_VERIFY_TLS", True)
+    # La base est un fichier, partagé avec la console par le volume /data (voir
+    # compose.yaml). Les copies de sauvegarde vont dans un dossier voisin, pour que l'hôte
+    # qui sauvegarde /data les emporte avec.
+    cfg.DB_PATH = os.environ.get("TINYCMDB_DB", "/data/tinycmdb.db")
+    cfg.BACKUP_DIR = os.environ.get("TINYCMDB_BACKUP_DIR", "") or str(
+        Path(cfg.DB_PATH).resolve().parent / "backups")
 
-    if not cfg.BASEROW_URL or not cfg.BASEROW_TOKEN:
-        raise ConfigError(
-            "BASEROW_URL et BASEROW_TOKEN sont obligatoires : Baserow est la seule destination du collecteur"
-        )
-
-    cfg.TABLE_NODE = os.environ.get("TABLE_NODE", "")
-    if not cfg.TABLE_NODE:
-        # Docker a besoin de Node pour résoudre le lien `host`, même si Proxmox est désactivé.
-        raise ConfigError("TABLE_NODE est obligatoire, y compris si seule la source Docker est active")
+    # Les tables sont désignées par leur nom. Elles existent toutes, toujours : c'est la
+    # disponibilité d'une source qui décide si une passe les alimente, d'où les None
+    # plus bas, qui gardent aux passes leur comportement d'origine.
+    cfg.TABLE_NODE = "node"
 
     cfg.PROXMOX_URL = os.environ.get("PROXMOX_URL", "").rstrip("/")
     cfg.PROXMOX_TOKEN = os.environ.get("PROXMOX_TOKEN", "")
@@ -84,34 +83,16 @@ def load():
     cfg.DOCKER_SOCKET_PROXY_PORT = _get_int("DOCKER_SOCKET_PROXY_PORT", 2375)
 
     # Un hôte Docker peut venir de DOCKER_HOSTS (explicite) ou être découvert après coup en
-    # taguant un Node "docker" dans Baserow — impossible à savoir avant la première passe
-    # Proxmox, donc dès que Proxmox est actif on exige les tables Docker par précaution.
+    # taguant un Node "docker" depuis la console — impossible à savoir avant la première passe
+    # Proxmox, donc dès que Proxmox est actif la passe Docker est armée par précaution.
     docker_possible = bool(cfg.DOCKER_HOSTS) or bool(cfg.PROXMOX_URL)
 
-    # TABLE_APPLICATION n'est plus utilisée par le collecteur : Application est 100% manuelle
-    # (un projet Compose est un fait sur Container.Stack, pas une Application au sens métier).
-    if docker_possible:
-        cfg.TABLE_CONTAINER = os.environ.get("TABLE_CONTAINER", "")
-        cfg.TABLE_IMAGES = os.environ.get("TABLE_IMAGES", "")
-        if not (cfg.TABLE_CONTAINER and cfg.TABLE_IMAGES):
-            raise ConfigError(
-                "DOCKER_HOSTS et/ou PROXMOX_URL sont renseignés (un Node Proxmox peut être tagué "
-                "'docker' à tout moment) : TABLE_CONTAINER et TABLE_IMAGES sont obligatoires"
-            )
-    else:
-        cfg.TABLE_CONTAINER = None
-        cfg.TABLE_IMAGES = None
+    cfg.TABLE_CONTAINER = "container" if docker_possible else None
+    cfg.TABLE_IMAGES = "image" if docker_possible else None
 
-    # IPAM alimenté uniquement à partir des données Proxmox (IP/MAC des guests) : les tables
-    # ne sont exigées que si PROXMOX_URL est actif.
-    if cfg.PROXMOX_URL:
-        cfg.TABLE_VLAN = os.environ.get("TABLE_VLAN", "")
-        cfg.TABLE_IPAM = os.environ.get("TABLE_IPAM", "")
-        if not (cfg.TABLE_VLAN and cfg.TABLE_IPAM):
-            raise ConfigError("PROXMOX_URL est renseigné : TABLE_VLAN et TABLE_IPAM sont obligatoires")
-    else:
-        cfg.TABLE_VLAN = None
-        cfg.TABLE_IPAM = None
+    # IPAM alimenté uniquement à partir des données Proxmox (IP/MAC des guests).
+    cfg.TABLE_VLAN = "vlan" if cfg.PROXMOX_URL else None
+    cfg.TABLE_IPAM = "ipam" if cfg.PROXMOX_URL else None
 
     if not cfg.PROXMOX_URL and not cfg.DOCKER_HOSTS:
         raise ConfigError(
@@ -124,7 +105,7 @@ def load():
     # existe déjà (docker_possible), sinon il n'y a jamais rien à vérifier.
     cfg.CUP_ENABLED = _get_bool("CUP_ENABLED", False)
     if cfg.CUP_ENABLED and not docker_possible:
-        raise ConfigError("CUP_ENABLED est actif mais aucune source Docker n'est active : TABLE_IMAGES n'existe pas")
+        raise ConfigError("CUP_ENABLED est actif mais aucune source Docker n'est active : il n'y a aucune image à examiner")
 
     # Trivy : même principe que Cup (sous-processus, pas de serveur). Désactivé par défaut.
     # Scan lent (dizaines de secondes par image la première fois) : intervalle bien plus
@@ -132,7 +113,7 @@ def load():
     cfg.TRIVY_ENABLED = _get_bool("TRIVY_ENABLED", False)
     cfg.TRIVY_CACHE_DIR = os.environ.get("TRIVY_CACHE_DIR", "/cache")
     if cfg.TRIVY_ENABLED and not docker_possible:
-        raise ConfigError("TRIVY_ENABLED est actif mais aucune source Docker n'est active : TABLE_IMAGES n'existe pas")
+        raise ConfigError("TRIVY_ENABLED est actif mais aucune source Docker n'est active : il n'y a aucune image à examiner")
 
     cfg.INTERVAL_CONTAINERS = _get_int("INTERVAL_CONTAINERS", 900)
     cfg.INTERVAL_NODES = _get_int("INTERVAL_NODES", 3600)

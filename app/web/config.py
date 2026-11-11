@@ -5,12 +5,14 @@ n'a pas besoin de Proxmox ni des sockets Docker, et exiger ces valeurs au démar
 ferait échouer un service qui n'en a que faire. Les deux lisent le même `.env`, chacun
 n'y prend que ce qui le concerne.
 
-Périmètre du service web = Baserow, et rien d'autre. C'est une propriété de sécurité,
-pas un détail d'implémentation : ce process est le seul des deux à être exposé à un
-navigateur, donc le seul dont la compromission mène quelque part.
+Périmètre du service web = la base SQLite, et rien d'autre (hormis la lecture des pages
+d'accueil des applications pour leurs icônes, voir favicons.py). C'est une propriété de
+sécurité, pas un détail d'implémentation : ce process est le seul des deux à être exposé
+à un navigateur, donc le seul dont la compromission mène quelque part.
 """
 
 import os
+from pathlib import Path
 
 
 class ConfigError(Exception):
@@ -38,37 +40,12 @@ def _get_bool(name, default):
 def load():
     cfg = Config()
 
-    cfg.BASEROW_URL = os.environ.get("BASEROW_URL", "").rstrip("/")
-    # Token dédié si fourni : la console n'a besoin que de la lecture (lot 1). Repli sur
-    # le token du collecteur pour démarrer sans configuration supplémentaire — pratique en
-    # test, à ne pas garder en production (voir README.md).
-    cfg.BASEROW_TOKEN = os.environ.get("WEB_BASEROW_TOKEN") or os.environ.get("BASEROW_TOKEN", "")
-    cfg.BASEROW_VERIFY_TLS = _get_bool("BASEROW_VERIFY_TLS", True)
-
-    if not cfg.BASEROW_URL or not cfg.BASEROW_TOKEN:
-        raise ConfigError("BASEROW_URL et BASEROW_TOKEN (ou WEB_BASEROW_TOKEN) sont obligatoires")
-
-    # La console lit les six tables sans exception : son intérêt est précisément de suivre
-    # les liens de l'une à l'autre. Une table manquante n'est donc pas un mode dégradé,
-    # c'est une configuration incomplète.
-    cfg.TABLES = {}
-    for key, env_name in (
-        ("node", "TABLE_NODE"),
-        ("container", "TABLE_CONTAINER"),
-        ("image", "TABLE_IMAGES"),
-        ("ipam", "TABLE_IPAM"),
-        ("vlan", "TABLE_VLAN"),
-        ("application", "TABLE_APPLICATION"),
-    ):
-        value = os.environ.get(env_name, "").strip()
-        if not value:
-            raise ConfigError(f"{env_name} est obligatoire pour la console web")
-        cfg.TABLES[key] = value
-
-    # Durée de vie de l'instantané en mémoire. 217 lignes se rechargent en ~1 s : inutile de
-    # descendre plus bas, inutile de monter beaucoup plus haut (le collecteur écrit toutes
-    # les 15 min au plus fréquent).
-    cfg.CACHE_TTL = _get_int("WEB_CACHE_TTL", 60)
+    # Même fichier que le collecteur, par le même volume /data. La console n'a pas de
+    # cache à durée de vie : elle relit la base dès que quelqu'un d'autre y a écrit (voir
+    # store.py), et seulement dans ce cas.
+    cfg.DB_PATH = os.environ.get("TINYCMDB_DB", "/data/tinycmdb.db")
+    cfg.BACKUP_DIR = os.environ.get("TINYCMDB_BACKUP_DIR", "") or str(
+        Path(cfg.DB_PATH).resolve().parent / "backups")
 
     # Repris tel quel du collecteur : sert à afficher le compte à rebours avant suppression
     # d'une ligne qui n'est plus vue. Doit valoir la même chose que côté collecteur, sinon
@@ -84,7 +61,7 @@ def load():
 
     # Découverte des icônes d'application : la console lit le HTML des URL saisies dans la
     # table Application pour y trouver la balise <link rel="icon">. Seule entorse au
-    # principe « ce service ne parle qu'à Baserow » — voir favicons.py. À désactiver si
+    # principe « ce service ne parle qu'à sa base » — voir favicons.py. À désactiver si
     # cette entorse n'est pas souhaitée ; les applications retombent sur leur initiale.
     cfg.FAVICON_DISCOVERY = _get_bool("WEB_FAVICON_DISCOVERY", True)
 

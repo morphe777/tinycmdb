@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{#
+  Cadre commun des pages d'administration : un fil, une barre d'onglets, le compte rendu
+  du dernier geste. Chaque page ne fournit que son contenu.
+#}
+{% set onglets = [('/admin', 'Vue d’ensemble'), ('/admin/listes', 'Listes'),
+                  ('/admin/champs', 'Champs'), ('/admin/donnees', 'Import / export'),
+                  ('/admin/journal', 'Journal'), ('/admin/sauvegardes', 'Sauvegardes'),
+                  ('/admin/jetons', 'Jetons API / MCP')] %}
+
+{% block contenu %}
+<div class="page">
+  <p class="fil">Administration</p>
+  <h1>{% block titre_admin %}Administration{% endblock %}</h1>
+  <nav class="onglets" aria-label="Administration">
+    {% for chemin, libelle in onglets %}
+    <a href="{{ chemin }}" class="{{ 'actif' if request.url.path == chemin }}">{{ libelle }}</a>
+    {% endfor %}
+  </nav>
+  {% if ok %}<p class="bandeau bandeau-ok" role="status">{{ ok }}</p>{% endif %}
+  {% if erreur %}<p class="alerte-form" role="alert"><b>Refusé.</b> {{ erreur }}</p>{% endif %}
+  {% block admin %}{% endblock %}
+</div>
+{% endblock %}

@@ -277,7 +277,7 @@ h1 .appicon { width: 30px; height: 30px; border-radius: 12px; font-size: 15px; m
 .badge-crit { background: var(--crit-doux); color: var(--crit); border-color: transparent; }
 .badge-warn { background: var(--warn-doux); color: var(--warn); border-color: transparent; }
 .badge-role { background: transparent; color: var(--encre-3); }
-/* Étiquette à la teinte définie dans Baserow : fond très dilué, texte à la teinte pleine.
+/* Étiquette à la teinte de son option : fond très dilué, texte à la teinte pleine.
    color-mix garde la lisibilité sur les deux thèmes sans dupliquer la palette. */
 .badge-teinte {
   background: color-mix(in srgb, var(--teinte) 17%, transparent);
@@ -1124,3 +1124,83 @@ a.case-libre:hover {
 }
 :root[data-theme="dark"] .terminal { background: #0a0c10; border-color: #303642; }
 :root[data-theme="dark"] .terminal-tete { background: #11141b; border-bottom-color: #303642; }
+
+/* ------------------------------------------------------------------ administration */
+
+/* Onglets de l'administration : la même convention que le menu principal (un trait sous
+   l'actif), en plus discret — c'est une navigation de second niveau. */
+.onglets {
+  display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 4px 0 22px;
+  border-bottom: 1px solid var(--trait); font-size: 13.5px;
+}
+.onglets a {
+  color: var(--encre-2); padding: 8px 0; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; text-decoration: none;
+}
+.onglets a:hover { color: var(--encre); }
+.onglets a.actif { color: var(--manuel); border-bottom-color: var(--manuel); font-weight: 550; }
+.onglets-secondaires { border-bottom: 0; margin-top: -8px; }
+.onglets-secondaires a { padding: 4px 10px; border: 1px solid var(--trait); border-radius: 999px; }
+.onglets-secondaires a.actif { border-color: var(--manuel); background: var(--manuel-doux); }
+
+.admin-cartes {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px; margin-bottom: 26px;
+}
+.admin-carte {
+  display: flex; flex-direction: column; gap: 4px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--trait); border-radius: 14px;
+  color: var(--encre); text-decoration: none;
+}
+.admin-carte:hover { border-color: var(--manuel); text-decoration: none; }
+.admin-carte b { font-size: 15px; }
+.admin-carte span { font-size: 13px; color: var(--encre-2); }
+.admin-carte small { font-size: 12.5px; color: var(--encre-3); }
+.admin-carte-alerte { border-color: var(--crit); }
+.admin-carte-alerte span { color: var(--crit); }
+
+.bouton-mini { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; }
+.bouton[disabled] { opacity: .35; cursor: default; pointer-events: none; }
+.bouton-danger { color: var(--crit); border-color: var(--crit); }
+.bouton-danger:hover { background: var(--crit); color: #fff; border-color: var(--crit); }
+
+/* Formulaire sur une ligne : champs et bouton côte à côte, qui passent à la ligne sur un
+   écran étroit plutôt que de déborder. */
+.ligne-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.ligne-form input[type="text"], .ligne-form input[type="number"], .ligne-form select {
+  font: inherit; font-size: 13px; padding: 6px 9px; border-radius: 8px; min-width: 0;
+  border: 1px solid var(--trait-fort); background: var(--surface); color: var(--encre);
+}
+.ligne-form input[type="text"] { flex: 1 1 160px; max-width: 320px; }
+.ligne-form input[readonly] { color: var(--encre-3); background: var(--surface-2); }
+.ligne-form label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.ligne-form.ajout { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--trait); }
+.filtres { margin-bottom: 18px; }
+.en-ligne { display: inline; margin: 0; }
+.grille-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 18px; }
+
+.tbl td.ordre form { display: flex; gap: 4px; margin: 0; }
+.tbl td.ordre { width: 1%; white-space: nowrap; }
+.tbl .ligne-revoquee td { color: var(--encre-3); }
+.journal-valeur { max-width: 280px; overflow-wrap: anywhere; font-size: 12.5px; }
+.journal-valeur code { white-space: pre-wrap; font-size: 11.5px; }
+.mono, textarea.mono { font-family: var(--mono); font-size: 12.5px; }
+
+.geste-repli { display: inline-block; }
+.geste-repli > summary { list-style: none; }
+.geste-repli > summary::-webkit-details-marker { display: none; }
+.geste-repli[open] > summary { margin-bottom: 8px; }
+
+/* Gestes sur une ligne entière, au bas d'une fiche : repliés, parce que rares. */
+.gestes > summary { cursor: pointer; color: var(--encre-2); font-size: 13.5px; }
+.gestes .geste { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--trait);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.gestes .geste p { flex: 1 1 100%; margin: 0; color: var(--encre-2); font-size: 13.5px; max-width: 78ch; }
+.geste-danger p b { color: var(--crit); }
+
+.bloc-secret { border-color: var(--ok); }
+.secret {
+  padding: 12px 14px; border-radius: 10px; background: var(--ok-doux); color: var(--encre);
+  overflow-x: auto; font-size: 13px; user-select: all;
+}
+.bloc-secret pre { white-space: pre-wrap; overflow-wrap: anywhere; }

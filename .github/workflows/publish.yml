@@ -69,7 +69,7 @@ jobs:
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=TinyCMDB
-            org.opencontainers.image.description=A small homelab CMDB and IPAM over Proxmox, Docker, Trivy and Baserow
+            org.opencontainers.image.description=A small standalone homelab CMDB and IPAM over Proxmox, Docker and Trivy, with a REST API and an MCP server
             org.opencontainers.image.licenses=MIT
 
       - name: Construire et pousser

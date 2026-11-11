@@ -1,0 +1,86 @@
+{% extends "admin/cadre.html" %}
+{% block titre %}Champs — Administration{% endblock %}
+{% block titre_admin %}Champs personnalisés{% endblock %}
+
+{% block admin %}
+<p class="intro">Des champs en plus de ceux du modèle, table par table. Ils s'affichent sur
+  les fiches, se saisissent dans les formulaires, s'exportent en CSV et se lisent par l'API —
+  comme les autres. Le collecteur n'y touche jamais : ils sont toujours <b>manuels</b>.
+  {% call m.aide("Champs du modèle") %}
+    <p>Les champs du modèle (Name, Type, Status…) sont lus par le collecteur et par les
+      règles de la console : ils ne se renomment pas et ne se suppriment pas. Un champ
+      personnalisé, lui, se renomme et se supprime librement — ses valeurs partent avec
+      lui, et la suppression est notée au journal.</p>
+    <p>Un champ de type liste démarre sans option : elles se créent dans l'onglet Listes.</p>
+  {% endcall %}
+</p>
+
+<section class="bloc">
+  <h2>Nouveau champ</h2>
+  <form method="post" action="/admin/champs/ajouter" class="edition grille-form">
+    <div class="champ">
+      <label for="c-table">Table</label>
+      <select id="c-table" name="table">
+        {% for t in par_table %}<option value="{{ t.kind }}">{{ t.libelle }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="champ">
+      <label for="c-nom">Nom</label>
+      <input id="c-nom" type="text" name="nom" maxlength="60" required placeholder="Numéro de série">
+    </div>
+    <div class="champ">
+      <label for="c-type">Type</label>
+      <select id="c-type" name="type">
+        {% for cle, libelle in types.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="champ champ-large">
+      <label for="c-aide">Aide (facultative)</label>
+      <input id="c-aide" type="text" name="aide" maxlength="255" placeholder="Affichée sous le champ dans les formulaires">
+    </div>
+    <div class="barre-form"><button type="submit" class="bouton bouton-primaire">Ajouter le champ</button></div>
+  </form>
+</section>
+
+{% for t in par_table %}
+<section class="bloc">
+  <h2>{{ t.libelle }} <span class="compte">{{ t.perso|length }} personnalisé{{ 's' if t.perso|length > 1 }}</span></h2>
+  {% if t.perso %}
+  <div class="tbl-scroll"><table class="tbl">
+    <thead><tr><th>Ordre</th><th>Nom et aide</th><th>Type</th><th></th></tr></thead>
+    <tbody>
+    {% for p in t.perso %}
+    <tr>
+      <td class="ordre">
+        <form method="post" action="/admin/champs/{{ p.id }}/deplacer">
+          <button class="bouton bouton-mini" name="sens" value="haut" aria-label="Monter" {{ 'disabled' if loop.first }}>↑</button>
+          <button class="bouton bouton-mini" name="sens" value="bas" aria-label="Descendre" {{ 'disabled' if loop.last }}>↓</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/admin/champs/{{ p.id }}/modifier" class="ligne-form">
+          <input type="text" name="nom" value="{{ p.nom }}" maxlength="60" required aria-label="Nom">
+          <input type="text" name="aide" value="{{ p.aide or '' }}" maxlength="255" placeholder="aide" aria-label="Aide">
+          <button type="submit" class="bouton bouton-mini">Enregistrer</button>
+        </form>
+      </td>
+      <td>{{ p.type_libelle }}{% if p.type in ('select', 'multi') %} · <a href="/admin/listes?table={{ t.kind }}">options</a>{% endif %}</td>
+      <td>
+        <details class="geste-repli">
+          <summary class="bouton bouton-mini">Supprimer…</summary>
+          <form method="post" action="/admin/champs/{{ p.id }}/supprimer" class="ligne-form">
+            <label class="bascule"><input type="checkbox" name="confirme" value="1" required>
+              supprimer le champ et toutes ses valeurs</label>
+            <button type="submit" class="bouton bouton-mini bouton-danger">Supprimer</button>
+          </form>
+        </details>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  <p class="note">Champs du modèle : {{ t.natifs|join(', ') }}.</p>
+</section>
+{% endfor %}
+{% endblock %}

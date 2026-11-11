@@ -1,7 +1,8 @@
-"""Écriture dans Baserow : le seul module du service web qui en soit capable.
+"""Écriture dans l'inventaire : le seul module du service web qui en soit capable.
 
-Tout le reste de `web/` ne connaît que `fetch_all`. Ce module concentre les trois
-appels qui écrivent, pour deux raisons.
+Tout le reste de `web/` ne connaît que l'instantané en lecture. Ce module concentre ce qui
+écrit — depuis l'interface, l'API et le serveur MCP, qui passent tous les trois par ici —
+pour deux raisons.
 
 La première est une raison de sûreté. Un champ que le collecteur réécrit n'est pas
 modifiable : une saisie y disparaîtrait au passage suivant, sans avertissement ni trace,
@@ -9,19 +10,16 @@ et une CMDB qui perd silencieusement ce qu'on lui confie ne vaut pas la peine d'
 tenue. La liste des champs modifiables est donc appliquée ici, côté serveur, et non dans
 le gabarit : l'interface décide ce qu'elle affiche, elle ne décide pas ce qui est permis.
 
-La seconde est une raison d'architecture. Baserow rend aujourd'hui trois services —
-stocker, offrir une porte de secours quand cette console ne suffit pas, et porter le
-schéma sans migration. Le premier, n'importe quoi le rend. Si un jour les deux autres ne
-justifient plus un Django, un Postgres et un Redis pour quelques centaines de lignes,
-changer de stockage ne devra pas être une réécriture : il faudra remplacer ce fichier, et
-lui seul.
+La seconde est une raison de cohérence. L'interface, l'API et le MCP appliquent les mêmes
+règles parce qu'ils appellent le même code : un agent ne peut pas écrire ce qu'un
+formulaire refuserait.
 
-Ce module ne supprime aucune ligne, et n'en crée que dans les trois tables où l'ajout est
-un geste courant : une adresse à réserver, une application à déclarer, un équipement que
-le collecteur ne peut pas découvrir — un portable, une imprimante, une caméra. Le token de
-la console n'a donc besoin ni de `delete`, ni de `create` ailleurs que sur Ipam,
-Application et Node — la compromission de ce service permet de fausser l'inventaire, pas
-de l'effacer.
+Les créations sont ouvertes là où l'ajout est un geste courant : une adresse à réserver,
+une application à déclarer, un équipement que le collecteur ne peut pas découvrir — un
+portable, une imprimante, une caméra —, un VLAN. Conteneurs et images restent des faits
+Docker, que seul le collecteur crée. La suppression d'une ligne est possible depuis
+l'interface, sur toutes les tables, et journalisée en entier ; l'API et le MCP ne
+suppriment rien.
 
 Une ligne Node créée ici porte `Source = Manual`, ce qui la protège intégralement : le
 collecteur ne la met pas à jour et ne la supprimera jamais, alors même qu'il ne la voit
@@ -31,7 +29,10 @@ passe suivante.
 
 import ipaddress
 import logging
+import re
 from collections import namedtuple
+
+from cmdb.depot import ErreurDonnee
 
 from . import schema
 
@@ -55,7 +56,7 @@ class EcritureRefusee(Exception):
 
 
 class EcritureImpossible(Exception):
-    """La demande était recevable ; Baserow l'a refusée ou n'a pas répondu."""
+    """La demande était recevable ; la base l'a refusée (verrou, disque plein…)."""
 
 
 # Champs proposés à la saisie, par type d'objet et dans cet ordre.
@@ -75,10 +76,14 @@ CHAMPS = {
         ("Name", "texte"),
         ("Type", "select"),
         ("Status", "select"),
+        ("Parent_host", "lien1:node"),
+        ("vmid", "entier"),
         ("OS", "texte"),
         ("vCPU", "entier"),
         ("RAM_Gb", "entier"),
         ("Disk_Gb", "entier"),
+        ("Backup", "bool"),
+        ("Guest_agent", "bool"),
         ("Roles", "multi"),
         ("Criticality", "select"),
         ("Application", "lien:application"),
@@ -122,15 +127,16 @@ CHAMPS = {
     ],
 }
 
-# Libellés de saisie. Le nom Baserow est exact mais parfois sec : `notes` en minuscules sur
+# Libellés de saisie. Le nom du champ est exact mais parfois sec : `notes` en minuscules sur
 # une table et `Notes` sur une autre, `vmid`, `RAM_Gb`. La fiche en consultation affiche le
-# nom du champ tel qu'il est dans Baserow — c'est ce qui permet de s'y retrouver quand on y
-# passe ; le formulaire, lui, s'adresse à quelqu'un qui saisit.
+# nom du champ tel qu'il est dans la base — le même que dans l'API et les exports CSV ; le
+# formulaire, lui, s'adresse à quelqu'un qui saisit.
 LIBELLES = {
     "Name": "Nom", "name": "Nom", "notes": "Notes", "Notes": "Notes",
     "Type": "Type", "Status": "Statut", "Roles": "Rôles", "Criticality": "Criticité",
     "Application": "Applications", "Application - Stack": "Application",
-    "OS": "Système", "vCPU": "vCPU", "RAM_Gb": "Mémoire (Go)", "Disk_Gb": "Disque (Go)",
+    "OS": "Système", "vCPU": "vCPU", "vmid": "Identifiant Proxmox (vmid)",
+    "Parent_host": "Hébergé par", "Backup": "Sauvegardé", "Guest_agent": "Agent invité", "RAM_Gb": "Mémoire (Go)", "Disk_Gb": "Disque (Go)",
     "Address": "Adresse", "MAC": "Adresse MAC", "Node": "Nœud",
     "Capability": "Fonctions", "URL": "URL", "URL 2": "URL secondaire", "Doc": "Documentation",
     "vlan_id": "Identifiant 802.1Q", "subnet": "Sous-réseau", "gateway": "Passerelle",
@@ -156,16 +162,36 @@ NOTICES_CREATION = {
     ("node", "Roles"): "À quoi il sert. Ne pas poser « docker » ici : ce rôle déclenche une interrogation du socket-proxy, qui n'existe pas sur un portable.",
 }
 
-LIENS = {"lien:node": "node", "lien:application": "application"}
+LIENS = {"lien:node": "node", "lien:application": "application", "lien1:node": "node"}
 
-# Tables où la console sait créer une ligne. Les trois autres sont alimentées par le
-# collecteur (Container, Images) ou constituent un référentiel qu'on n'étend qu'une fois
-# par an (VLAN) — Baserow y suffit.
+# Tables où la console sait créer une ligne. Les deux autres sont alimentées par le
+# collecteur (Container, Images), et lui seul sait ce qu'elles doivent contenir.
 #
 # Node y figure pour ce que Proxmox ne peut pas voir : un portable, une imprimante, une
 # caméra, un NAS. Sans cela, la moitié du parc réel n'a aucun moyen d'entrer dans la CMDB,
 # et l'IPAM renvoie des adresses rattachées à rien.
-CREABLES = ("ipam", "application", "node")
+CREABLES = ("ipam", "application", "node", "vlan")
+
+# Widget de saisie d'un champ personnalisé, par type.
+WIDGET_PERSO = {"texte": "texte", "long": "long", "url": "url", "entier": "entier",
+                "bool": "bool", "date": "date", "select": "select", "multi": "multi"}
+
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def champs_de(snap, kind):
+    """Champs saisissables d'une table : ceux du modèle, puis les champs personnalisés
+    créés dans l'administration, dans leur ordre."""
+    return list(CHAMPS.get(kind, [])) + [
+        (p["nom"], WIDGET_PERSO.get(p["type"], "texte"))
+        for p in snap.perso.get(kind, [])]
+
+
+def aide_perso(snap, kind, champ):
+    for p in snap.perso.get(kind, []):
+        if p["nom"] == champ:
+            return p.get("aide")
+    return None
 
 # Valeur imposée au champ `Source` de la ligne créée. Sur l'IPAM, c'est la clause qui
 # protège la saisie : sans `Manual`, le collecteur supprimerait cette adresse dès qu'il
@@ -175,7 +201,7 @@ SOURCE_CREATION = {"ipam": "Manual", "node": "Manual"}
 
 # Champ portant le nom, par table : sert au contrôle de doublon et au message qui
 # l'accompagne.
-CLE_NATURELLE = {"ipam": "Address", "application": "Name", "node": "Name"}
+CLE_NATURELLE = {"ipam": "Address", "application": "Name", "node": "Name", "vlan": "name"}
 
 
 def formulaire_creation(snap, kind):
@@ -189,15 +215,16 @@ def formulaire_creation(snap, kind):
     """
     source = SOURCE_CREATION.get(kind)
     champs = []
-    for champ, widget in CHAMPS.get(kind, []):
+    for champ, widget in champs_de(snap, kind):
         if not schema.editable(kind, champ, source):
             continue
         champs.append({
             "champ": champ,
             "widget": widget,
             "libelle": LIBELLES.get(champ, champ),
-            "notice": NOTICES_CREATION.get((kind, champ)),
-            "valeur": [] if (widget == "multi" or widget in LIENS) else (False if widget == "bool" else None),
+            "notice": NOTICES_CREATION.get((kind, champ)) or aide_perso(snap, kind, champ),
+            "valeur": [] if (widget == "multi" or widget in LIENS and widget != "lien1:node")
+                      else (False if widget == "bool" else None),
             "options": options(snap, kind, champ) if widget in ("select", "multi") else [],
             "cibles": cibles(snap, LIENS[widget]) if widget in LIENS else [],
         })
@@ -207,23 +234,12 @@ def formulaire_creation(snap, kind):
 # --------------------------------------------------------------------------- options
 
 def options(snap, kind, field):
-    """Options proposées pour une liste déroulante.
+    """Options proposées pour une liste, dans l'ordre réglé dans l'administration.
 
-    Baserow ne donne pas la définition de ses champs à un *database token* : la liste des
-    options d'un `single_select` n'est lisible que par l'API d'administration, avec un
-    jeton de session. Elles sont donc déduites de ce qui est employé dans la table.
-
-    Conséquence assumée : une option définie mais encore jamais utilisée n'apparaît pas.
-    Créer une option est un changement de schéma ; c'est précisément ce que Baserow reste
-    là pour faire, et le formulaire le dit.
+    Ce sont les options *définies*, employées ou non : c'est là qu'on les crée, qu'on les
+    renomme et qu'on choisit leur couleur (Administration → Listes).
     """
-    vues = []
-    for obj in snap.by_kind.get(kind, {}).values():
-        valeurs = obj.multi(field) if isinstance(obj.get(field), list) else [obj.sel(field)]
-        for v in valeurs:
-            if v and v not in vues:
-                vues.append(v)
-    return sorted(vues, key=str.lower)
+    return [o["valeur"] for o in snap.options.get((kind, field), [])]
 
 
 def cibles(snap, kind):
@@ -239,14 +255,14 @@ def formulaire(snap, obj):
     contredire.
     """
     champs = []
-    for champ, widget in CHAMPS.get(obj.kind, []):
+    for champ, widget in champs_de(snap, obj.kind):
         if not schema.editable(obj.kind, champ, obj.source):
             continue
         champs.append({
             "champ": champ,
             "widget": widget,
             "libelle": LIBELLES.get(champ, champ),
-            "notice": NOTICES.get((obj.kind, champ)),
+            "notice": NOTICES.get((obj.kind, champ)) or aide_perso(snap, obj.kind, champ),
             "valeur": _actuel(obj, champ, widget),
             "options": options(snap, obj.kind, champ) if widget in ("select", "multi") else [],
             "cibles": cibles(snap, LIENS[widget]) if widget in LIENS else [],
@@ -269,6 +285,11 @@ def saisie_brute(snap, descripteurs, donnees):
         clef = f"champ.{champ}"
         if widget == "multi":
             saisie[champ] = [v for v in donnees.getlist(clef) if v]
+        elif widget == "lien1:node":
+            try:
+                saisie[champ] = int(donnees.get(clef) or 0) or None
+            except (TypeError, ValueError):
+                saisie[champ] = None
         elif widget in LIENS:
             ids = []
             for v in donnees.getlist(clef):
@@ -292,6 +313,9 @@ def _actuel(obj, champ, widget):
     """Valeur actuelle, dans la forme que le formulaire renvoie — donc comparable."""
     if widget == "multi":
         return sorted(obj.multi(champ))
+    if widget == "lien1:node":
+        liens = [v["id"] for v in (obj.get(champ) or []) if isinstance(v, dict) and "id" in v]
+        return liens[0] if liens else None
     if widget in LIENS:
         return sorted(v["id"] for v in (obj.get(champ) or []) if isinstance(v, dict) and "id" in v)
     if widget == "select":
@@ -312,6 +336,18 @@ def _valider(snap, kind, champ, widget, brut, multiples):
 
     if widget == "bool":
         return brut is not None
+
+    if widget == "lien1:node":
+        texte = (brut or "").strip()
+        if not texte:
+            return None
+        try:
+            ident = int(texte)
+        except ValueError:
+            raise EcritureRefusee(f"{libelle} : référence invalide")
+        if ident not in snap.by_kind.get("node", {}):
+            raise EcritureRefusee(f"{libelle} : référence inconnue ({ident})")
+        return ident
 
     if widget == "multi":
         choix = [v for v in multiples if v]
@@ -365,6 +401,13 @@ def _valider(snap, kind, champ, widget, brut, multiples):
             raise EcritureRefusee(f"{libelle} : valeur négative")
         return valeur
 
+    if widget == "date":
+        if not texte:
+            return None
+        if not DATE.match(texte):
+            raise EcritureRefusee(f"{libelle} : date attendue au format AAAA-MM-JJ")
+        return texte
+
     if widget == "url":
         if not texte:
             return None
@@ -377,17 +420,15 @@ def _valider(snap, kind, champ, widget, brut, multiples):
     limite = MAX_LONG if widget == "long" else MAX_TEXTE
     if len(texte) > limite:
         raise EcritureRefusee(f"{libelle} : {len(texte)} caractères pour {limite} au maximum")
-    if widget == "texte" and not texte and champ in ("Name", "name", "Address"):
+    if widget == "texte" and not texte and champ in ("Name", "name", "Address", "UID", "Reference"):
         raise EcritureRefusee(f"{libelle} : ce champ ne peut pas être vide")
     return texte or None
 
 
 def _payload(widget, valeur):
-    """Forme attendue par Baserow pour effacer ou poser la valeur."""
-    if widget in LIENS or widget == "multi":
-        return valeur
-    if widget in ("texte", "long", "url"):
-        return valeur if valeur is not None else ""
+    """Forme attendue par la base pour effacer ou poser la valeur."""
+    if widget == "lien1:node":
+        return [valeur] if valeur else []
     return valeur
 
 
@@ -409,7 +450,7 @@ def _lire(snap, kind, descripteurs, donnees):
         if champ not in portee:
             continue
         clef = f"champ.{champ}"
-        if widget == "multi" or widget in LIENS:
+        if widget == "multi" or (widget in LIENS and widget != "lien1:node"):
             brut, multiples = None, donnees.getlist(clef)
         else:
             brut, multiples = donnees.get(clef), []
@@ -418,8 +459,8 @@ def _lire(snap, kind, descripteurs, donnees):
 
 
 def _doublon(snap, kind, champ, valeur):
-    """Ligne existante portant déjà cette clé. Baserow ne contraint pas l'unicité, et deux
-    lignes pour une même adresse rendent l'inventaire faux plutôt qu'incomplet."""
+    """Ligne existante portant déjà cette clé. La base l'interdit aussi ; le vérifier ici
+    donne un message qui désigne la ligne existante plutôt qu'une contrainte violée."""
     reference = (valeur or "").strip().lower()
     for obj in snap.by_kind.get(kind, {}).values():
         if (obj.get(champ) or "").strip().lower() == reference:
@@ -494,7 +535,7 @@ def champ_stacks(snap, app):
     """Descripteur prêt pour le sélecteur : toutes les stacks, celles de l'application
     cochées.
 
-    `id` porte ici la clé de la stack — hôte et nom — et non un identifiant Baserow : une
+    `id` porte ici la clé de la stack — hôte et nom — et non un identifiant de ligne : une
     stack n'est pas une ligne, c'est un regroupement de conteneurs. Deux hôtes peuvent
     porter une stack de même nom, les trois socket-proxies en sont l'exemple, et seule la
     clé les distingue.
@@ -513,16 +554,30 @@ def champ_stacks(snap, app):
 
 
 class Redacteur:
-    """Applique une saisie à une ligne Baserow. Crée sur Ipam et Application, jamais
-    ailleurs ; ne supprime nulle part."""
+    """Applique une saisie à l'inventaire. `acteur` nomme l'auteur au journal :
+    `interface`, `api:<jeton>` ou `mcp:<jeton>`.
 
-    def __init__(self, client, cfg):
-        self.client = client
-        self.cfg = cfg
+    `simulation` valide tout sans rien écrire et rend ce qui serait fait : c'est ce qui
+    sert l'aperçu d'un import CSV.
+    """
+
+    def __init__(self, depot):
+        self.depot = depot
+
+    def _ecrire(self, kind, ident, payload, acteur):
+        try:
+            if ident is None:
+                return self.depot.creer(kind, payload, acteur=acteur)
+            return self.depot.modifier(kind, ident, payload, acteur=acteur)
+        except ErreurDonnee as exc:
+            raise EcritureRefusee(str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Écriture refusée par la base sur %s#%s", kind, ident)
+            raise EcritureImpossible(_motif(exc)) from exc
 
     # -- création ------------------------------------------------------------
-    def creer(self, snap, kind, donnees):
-        """Crée une ligne et renvoie son identifiant."""
+    def creer(self, snap, kind, donnees, acteur="interface", simulation=False):
+        """Crée une ligne et renvoie son identifiant (None en simulation)."""
         if kind not in CREABLES:
             raise EcritureRefusee("La création n'est pas ouverte sur cette table.")
 
@@ -537,32 +592,47 @@ class Redacteur:
             raise EcritureRefusee(
                 f"« {valeurs[cle]} » figure déjà dans l'inventaire. Modifier la ligne "
                 "existante plutôt que d'en créer une seconde.")
+        if simulation:
+            return None
 
         widgets = {d["champ"]: d["widget"] for d in descripteurs}
         payload = {champ: _payload(widgets[champ], v) for champ, v in valeurs.items()}
         payload.update(_derives(snap, kind, valeurs))
 
-        try:
-            ligne = self.client.create_row(self.cfg.TABLES[kind], payload)
-        except Exception as exc:
-            logger.exception("Création refusée par Baserow sur %s", kind)
-            raise EcritureImpossible(_motif(exc)) from exc
-
-        logger.info("création %s#%s %s=%r", kind, ligne.get("id"), cle, valeurs[cle])
+        ligne = self._ecrire(kind, None, payload, acteur)
+        logger.info("création %s#%s %s=%r par %s", kind, ligne.get("id"), cle, valeurs[cle], acteur)
         return ligne["id"]
+
+    # -- suppression ---------------------------------------------------------
+    def supprimer(self, obj, acteur="interface"):
+        """Supprime la ligne pour de bon. Le journal en garde le contenu intégral."""
+        try:
+            self.depot.supprimer(obj.kind, obj.id, acteur=acteur)
+        except ErreurDonnee as exc:
+            raise EcritureRefusee(str(exc)) from exc
+        logger.info("suppression %s#%s %s par %s", obj.kind, obj.id, obj.name, acteur)
+
+    # -- provenance ----------------------------------------------------------
+    def basculer_source(self, obj, acteur="interface"):
+        """Passe une ligne Node ou IPAM de Auto à Manual, ou l'inverse.
+
+        Manual protège la ligne du collecteur (il ne la met plus à jour et ne la supprime
+        plus) ; Auto la lui rend. C'est le geste qu'on faisait dans Baserow en changeant
+        la colonne Source.
+        """
+        if obj.kind not in ("node", "ipam"):
+            raise EcritureRefusee("Seuls les nœuds et les adresses portent une provenance.")
+        nouvelle = "Auto" if obj.is_manual else "Manual"
+        self._ecrire(obj.kind, obj.id, {"Source": nouvelle}, acteur)
+        return nouvelle
 
     # -- rattachement applicatif --------------------------------------------
 
-    def _poser_rattachement(self, conteneur, ids):
-        try:
-            self.client.update_row(self.cfg.TABLES["container"], conteneur.id,
-                                   {CHAMP_APPLICATION: ids})
-        except Exception as exc:
-            logger.exception("Rattachement refusé par Baserow sur conteneur#%s", conteneur.id)
-            raise EcritureImpossible(_motif(exc)) from exc
+    def _poser_rattachement(self, conteneur, ids, acteur):
+        self._ecrire("container", conteneur.id, {CHAMP_APPLICATION: ids}, acteur)
         logger.info("rattachement conteneur#%s %s -> %r", conteneur.id, conteneur.name, ids)
 
-    def rattacher_stack(self, snap, stack, donnees):
+    def rattacher_stack(self, snap, stack, donnees, acteur="interface"):
         """Depuis la stack : pose le même rattachement sur tous ses conteneurs.
 
         Remplacement et non ajout : dire ce que sert une stack, c'est dire ce qu'elle sert
@@ -581,11 +651,11 @@ class Redacteur:
         for conteneur in stack.containers:
             if _actuel(conteneur, CHAMP_APPLICATION, "lien:application") == ids:
                 continue
-            self._poser_rattachement(conteneur, ids)
+            self._poser_rattachement(conteneur, ids, acteur)
             ecrits += 1
         return ecrits
 
-    def rattacher_application(self, snap, app, donnees):
+    def rattacher_application(self, snap, app, donnees, acteur="interface"):
         """Depuis l'application : coche les stacks où elle tourne.
 
         Une stack décochée perd CETTE application, pas les autres qu'elle porterait. Un
@@ -617,13 +687,14 @@ class Redacteur:
                     continue
                 nouveau = sorted(set(actuel) | {app.id}) if voulu \
                     else sorted(set(actuel) - {app.id})
-                self._poser_rattachement(conteneur, nouveau)
+                self._poser_rattachement(conteneur, nouveau, acteur)
                 ecrits += 1
         return ecrits
 
     # -- modification --------------------------------------------------------
 
-    def appliquer(self, snap, obj, donnees, hors_ligne=()):
+    def appliquer(self, snap, obj, donnees, hors_ligne=(), acteur="interface",
+                  simulation=False):
         """`donnees` est le formulaire reçu. Renvoie la liste des changements écrits.
 
         `hors_ligne` nomme les champs que ce formulaire porte sans qu'ils appartiennent à
@@ -631,9 +702,8 @@ class Redacteur:
         conteneurs. Ils sont enregistrés par ailleurs ; ici il suffit de ne pas les
         prendre pour des intrus.
 
-        Seuls les champs effectivement modifiés partent dans la requête : Baserow laisse
-        intact tout champ absent du payload, ce qui évite de réécrire dix champs — et dix
-        horodatages de modification — pour une note corrigée.
+        Seuls les champs effectivement modifiés sont écrits : un champ absent reste
+        intact, et le journal ne note que ce qui a réellement changé.
         """
         modifiables = {c["champ"]: c for c in formulaire(snap, obj)}
 
@@ -655,35 +725,17 @@ class Redacteur:
             changements.append(Changement(champ, descr["valeur"], nouveau))
             payload[champ] = _payload(descr["widget"], nouveau)
 
-        if not payload:
-            return []
+        if not payload or simulation:
+            return changements
 
-        table_id = self.cfg.TABLES[obj.kind]
-        try:
-            self.client.update_row(table_id, obj.id, payload)
-        except Exception as exc:
-            logger.exception("Écriture refusée par Baserow sur %s#%s", obj.kind, obj.id)
-            raise EcritureImpossible(_motif(exc)) from exc
-
+        self._ecrire(obj.kind, obj.id, payload, acteur)
         for c in changements:
-            logger.info("écriture %s#%s %s : %r -> %r", obj.kind, obj.id, c.champ, c.avant, c.apres)
+            logger.info("écriture %s#%s %s : %r -> %r par %s", obj.kind, obj.id, c.champ,
+                        c.avant, c.apres, acteur)
         return changements
 
 
 def _motif(exc):
-    """Message de Baserow plutôt que trace HTTP : `ERROR_FIELD_NOT_IN_TABLE` désigne la
-    cause réelle — un champ renommé — là où « 400 Bad Request » ne désigne rien."""
-    reponse = getattr(exc, "response", None)
-    if reponse is not None:
-        try:
-            corps = reponse.json()
-        except ValueError:
-            corps = {}
-        erreur = corps.get("error") or ""
-        detail = corps.get("detail")
-        if isinstance(detail, dict):
-            detail = "; ".join(f"{k} : {v}" for k, v in detail.items())
-        if erreur or detail:
-            return " — ".join(x for x in (erreur, str(detail) if detail else "") if x)
-        return f"HTTP {reponse.status_code}"
+    """Message de la base plutôt qu'une trace : « database is locked » désigne la cause
+    réelle là où une erreur 500 ne désigne rien."""
     return str(exc) or exc.__class__.__name__

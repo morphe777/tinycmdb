@@ -5,7 +5,13 @@
 
 {% block contenu %}
 <div class="page">
-  <h1>Plan d'adressage</h1>
+  <div class="entete-page">
+    <h1>Plan d'adressage</h1>
+    <a class="bouton bouton-primaire" href="/ipam?nouveau=1#creer-vlan"
+       data-nouvelle="">Nouveau VLAN</a>
+  </div>
+  {{ m.creation('creer-vlan', 'Nouveau VLAN', '/creer/vlan', creation_champs,
+                creation_ouverte, creation_erreur, '/ipam') }}
 
   <section class="bloc">
     <h2>VLAN
@@ -17,8 +23,8 @@
           nœud. Le collecteur en déduit ensuite le VLAN d'appartenance, le constructeur à
           partir du préfixe MAC, le nom d'hôte et le FQDN par résolution DNS inverse, et
           les tient à jour à chaque passage.</p>
-        <p>La table VLAN est un référentiel : elle est lue pour rattacher chaque adresse à
-          son sous-réseau, jamais écrite.</p>
+        <p>La table VLAN est un référentiel : le collecteur la lit pour rattacher chaque
+          adresse à son sous-réseau, et ne l'écrit jamais. Elle se tient à la main, ici.</p>
       {% endcall %}
     </h2>
 

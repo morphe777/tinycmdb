@@ -1,4 +1,4 @@
-# Collecteur
+# Collecteur (et la reprise Baserow, app/cmdb/reprise_baserow.py)
 requests==2.34.2
 
 # Console web (service `web` de compose.yaml, voir app/web/). Le collecteur n'en a pas
@@ -6,3 +6,8 @@ requests==2.34.2
 fastapi==0.141.1
 jinja2==3.1.6
 uvicorn==0.52.4
+
+# Serveur MCP de la console (app/web/mcp_serveur.py), monté sur /mcp à côté de l'API.
+# Épinglé comme le reste : le protocole évolue vite et un agent qui se connecte ne doit pas
+# découvrir un changement d'outils au hasard d'une reconstruction.
+mcp==2.3.0

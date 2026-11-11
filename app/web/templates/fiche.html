@@ -65,9 +65,9 @@
             dépendent que de la saisie, et ce sont les seuls que cette console permet de
             modifier : ouvrir les autres à l'édition reviendrait à proposer une saisie
             dont la disparition est programmée.</p>
-          <p>Les options proposées dans les listes sont celles déjà employées dans la
-            base. Créer une option, ajouter un champ ou supprimer une ligne relève du
-            schéma, et reste du ressort de Baserow.</p>
+          <p>Les options proposées dans les listes, comme les champs personnalisés, se
+            définissent dans <a href="/admin">Administration</a>. La suppression d'une
+            ligne se fait en bas de cette fiche.</p>
           {% if obj.kind == 'node' and obj.is_manual %}
           <p>Cette ligne étant saisie à la main, elle est protégée dans son intégralité :
             le collecteur ne la met pas à jour et ne la supprimera jamais.</p>
@@ -99,6 +99,18 @@
           {% if not origine_commune %}<td class="col-origine">{{ m.origine(r.origin) }}</td>{% endif %}
         </tr>
         {% endfor %}
+        {# Champs modifiables qui ne s'affichent pas dans ce tableau en consultation — un
+           lien qui a sa place dans le cadre Liens, par exemple. En modification, ils
+           rejoignent les autres : un champ qu'on peut saisir doit être à portée. #}
+        {% if edition %}
+        {% for c in champs if c.champ not in noms_lignes and c.champ not in ('Name', 'stack') %}
+        <tr class="ligne-champ origine-ligne-manuel">
+          <th>{{ c.libelle }}</th>
+          <td>{{ m.champ_cellule(c) }}</td>
+          {% if not origine_commune %}<td class="col-origine">{{ m.origine('manuel') }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+        {% endif %}
       </table>
 
       {# La barre clot la carte qui porte les champs, et non la page : posee sous les deux
@@ -178,6 +190,8 @@
   </div>
 
   {% if edition %}</form>{% endif %}
+
+  {% if not edition %}{{ m.gestes_ligne(obj) }}{% endif %}
 
   {% if obj.kind == 'node' and obj.containers %}
   <section class="bloc">

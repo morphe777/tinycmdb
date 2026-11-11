@@ -1,0 +1,52 @@
+{% extends "admin/cadre.html" %}
+{% block titre %}Administration{% endblock %}
+{% block titre_admin %}Administration{% endblock %}
+
+{% block admin %}
+<p class="intro">Tout ce que la base permet de faire et que les fiches ne couvrent pas :
+  définir les listes et les champs, importer ou exporter en masse, retrouver ce qui a été
+  écrit, sauvegarder, ouvrir l'accès aux applications et aux agents.</p>
+
+<div class="admin-cartes">
+  <a class="admin-carte" href="/admin/listes">
+    <b>Listes</b>
+    <span>{{ nb_options }} options dans {{ nb_listes }} listes</span>
+    <small>Créer, renommer, colorer, ordonner ou supprimer une option.</small>
+  </a>
+  <a class="admin-carte" href="/admin/champs">
+    <b>Champs</b>
+    <span>{{ nb_perso }} champ{{ 's' if nb_perso != 1 }} personnalisé{{ 's' if nb_perso != 1 }}</span>
+    <small>Ajouter à une table ce que le modèle ne prévoit pas.</small>
+  </a>
+  <a class="admin-carte" href="/admin/donnees">
+    <b>Import / export</b>
+    <span>CSV, table par table</span>
+    <small>Exporter pour un tableur, coller un CSV pour corriger en masse.</small>
+  </a>
+  <a class="admin-carte" href="/admin/journal">
+    <b>Journal</b>
+    <span>{{ journal|length and 'dernière entrée ' ~ (journal[0].quand[:16]|replace('T', ' ')) or 'vide' }}</span>
+    <small>Qui a écrit quoi, quand — interface, API, MCP, collecteur.</small>
+  </a>
+  <a class="admin-carte{{ ' admin-carte-alerte' if not copie }}" href="/admin/sauvegardes">
+    <b>Sauvegardes</b>
+    <span>{% if copie %}{{ nb_copies }} copies, la dernière {{ copie.date|ago }}{% else %}aucune copie{% endif %}</span>
+    <small>Cadence, conservation, copie immédiate, téléchargement.</small>
+  </a>
+  <a class="admin-carte" href="/admin/jetons">
+    <b>Jetons API / MCP</b>
+    <span>{{ nb_jetons }} jeton{{ 's' if nb_jetons != 1 }} actif{{ 's' if nb_jetons != 1 }}</span>
+    <small>L'accès des applications et des agents à <code>/api/v1</code> et <code>/mcp</code>.</small>
+  </a>
+</div>
+
+{% if journal %}
+<section class="bloc">
+  <h2>Dernières écritures <a class="bouton bouton-discret" href="/admin/journal">tout le journal</a></h2>
+  {% include "admin/_journal_table.html" %}
+</section>
+{% endif %}
+
+<p class="note">Cette interface n'a pas d'authentification propre : elle s'en remet au
+  filtrage du reverse proxy qui la publie. L'API et le serveur MCP, eux, exigent un jeton.</p>
+{% endblock %}

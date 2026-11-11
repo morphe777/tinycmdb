@@ -1,0 +1,77 @@
+{% extends "admin/cadre.html" %}
+{% block titre %}Sauvegardes — Administration{% endblock %}
+{% block titre_admin %}Sauvegardes{% endblock %}
+
+{% block admin %}
+<p class="intro">Le collecteur écrit une copie complète et vérifiée de la base dans
+  <code>{{ dossier }}</code>, à la cadence réglée ci-dessous. Ce dossier est à côté de la base,
+  dans le volume monté depuis l'hôte : la sauvegarde de l'hôte emporte les copies avec le
+  reste.
+  {% call m.aide("Restaurer une copie") %}
+    <p>Arrêter les deux services, remplacer <code>tinycmdb.db</code> par la copie choisie,
+      supprimer <code>tinycmdb.db-wal</code> et <code>tinycmdb.db-shm</code> s'ils
+      existent, redémarrer. Une copie est une base complète : rien d'autre à restaurer.</p>
+    <p>Pourquoi des copies plutôt que le fichier lui-même : copier une base pendant
+      qu'elle est écrite peut donner un fichier incohérent. Les copies, elles, sont
+      écrites d'un bloc puis relues avant d'être conservées.</p>
+  {% endcall %}
+</p>
+
+<div class="deux-colonnes">
+  <section class="bloc">
+    <h2>Réglages</h2>
+    <form method="post" action="/admin/sauvegardes/reglages" class="edition">
+      <div class="champ">
+        <label for="s-int">Une copie toutes les (heures)</label>
+        <input id="s-int" type="number" min="0" name="sauvegarde_intervalle_heures" value="{{ intervalle }}">
+        <small class="notice">0 désactive les copies automatiques.</small>
+      </div>
+      <div class="champ">
+        <label for="s-cons">Copies conservées</label>
+        <input id="s-cons" type="number" min="1" name="sauvegarde_conservation" value="{{ conservation }}">
+        <small class="notice">Les plus anciennes sont supprimées au-delà.</small>
+      </div>
+      <div class="champ">
+        <label for="s-jour">Journal conservé (jours)</label>
+        <input id="s-jour" type="number" min="0" name="journal_conservation_jours" value="{{ journal_jours }}">
+        <small class="notice">0 garde tout.</small>
+      </div>
+      <div class="barre-form"><button type="submit" class="bouton bouton-primaire">Enregistrer</button></div>
+    </form>
+  </section>
+
+  <section class="bloc">
+    <h2>Base</h2>
+    <table class="fiche">
+      <tr><th>Fichier</th><td><code>{{ base }}</code></td></tr>
+      <tr><th>Taille</th><td>{{ (taille_base / 1024)|round(0)|int }} Kio</td></tr>
+      <tr><th>Copies</th><td><code>{{ dossier }}</code></td></tr>
+    </table>
+    <form method="post" action="/admin/sauvegardes/maintenant">
+      <div class="barre-form"><button type="submit" class="bouton">Sauvegarder maintenant</button></div>
+    </form>
+  </section>
+</div>
+
+<section class="bloc">
+  <h2>Copies <span class="compte">{{ copies|length }}</span></h2>
+  {% if copies %}
+  <div class="tbl-scroll"><table class="tbl">
+    <thead><tr><th>Copie</th><th>Écrite</th><th class="num">Taille</th><th></th></tr></thead>
+    <tbody>
+    {% for c in copies %}
+    <tr>
+      <td class="mono">{{ c.nom }}</td>
+      <td>{{ c.date|datefr }} <span class="vide">({{ c.date|ago }})</span></td>
+      <td class="num">{{ (c.taille / 1024)|round(0)|int }} Kio</td>
+      <td><a class="bouton bouton-mini" href="/admin/sauvegardes/fichier/{{ c.nom }}" download>Télécharger</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="rien">Aucune copie pour l'instant. La première est écrite au prochain cycle du
+    collecteur, ou tout de suite avec le bouton ci-dessus.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,4 +1,4 @@
-# Secrets : BASEROW_TOKEN, PROXMOX_TOKEN, WEB_BASEROW_TOKEN. `.env.example` documente les
+# Secrets : PROXMOX_TOKEN (et, le temps de la reprise, BASEROW_TOKEN). `.env.example` documente les
 # clés attendues et se versionne, lui.
 .env
 
@@ -10,6 +10,11 @@ trivy-cache/
 # Surcharge locale de compose : c'est là que vit le montage du code en lecture seule pour
 # le développement. Propre à chaque poste, jamais partagée.
 compose.override.yaml
+
+# La base de l'inventaire et ses sauvegardes (TINYCMDB_DATA par défaut, voir compose.yaml) :
+# des données, pas du code — et l'inventaire entier de l'infrastructure.
+data/
+dev-data/
 
 __pycache__/
 *.pyc

@@ -12,16 +12,17 @@
   <div class="page">
     <h1>Inventaire indisponible</h1>
     <section class="bloc">
-      <h2>Baserow est injoignable</h2>
+      <h2>La base est illisible</h2>
       <p class="intro">La console ne détient aucun instantané de l'inventaire et ne peut
-        pas en charger : la base ne répond pas. Rien n'est perdu — cette console ne stocke
-        rien et n'écrit rien, elle ne fait que lire.</p>
+        pas en charger : le fichier de la base ne s'ouvre pas. Le plus souvent, le dossier
+        monté sur <code>/data</code> est absent ou n'appartient pas à l'UID 1000.</p>
       <table class="fiche">
-        <tr><th>Base interrogée</th><td><code>{{ url }}</code></td></tr>
+        <tr><th>Fichier</th><td><code>{{ url }}</code></td></tr>
         <tr><th>Erreur</th><td><span class="long">{{ detail }}</span></td></tr>
       </table>
-      <p class="note">Cette page disparaîtra d'elle-même dès que la base répondra de
-        nouveau. Aucune action n'est requise sur la console.</p>
+      <p class="note">Cette page disparaîtra d'elle-même dès que la base sera lisible.
+        Des copies récentes se trouvent dans le dossier <code>backups</code>, à côté du
+        fichier de la base.</p>
     </section>
   </div>
 </main>

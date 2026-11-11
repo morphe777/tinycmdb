@@ -1,7 +1,7 @@
 """Canal entre la console et le collecteur.
 
 Ce sont deux processus, dans deux conteneurs, sans lien réseau entre eux : la console
-lit Baserow, le collecteur l'écrit, et ils ne se parlent pas. Demander une collecte
+lit la base, le collecteur l'écrit, et ils ne se parlent pas. Demander une collecte
 immédiate depuis la console demande donc un canal, et un seul besoin le justifie —
 « vas-y maintenant » — dans un sens unique, sans donnée, sans réponse attendue.
 

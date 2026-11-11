@@ -80,8 +80,8 @@
         {% call m.aide("Table VLAN") %}
           <p>Cette table est un référentiel, saisi et maintenu à la main. Le collecteur la
             lit pour rattacher chaque adresse à son sous-réseau, et n'y écrit jamais rien.</p>
-          <p>Tous ses champs sont donc modifiables depuis cette console. La création d'un
-            VLAN reste à faire dans Baserow.</p>
+          <p>Tous ses champs sont donc modifiables depuis cette console. Un nouveau VLAN se
+            crée depuis la page IPAM.</p>
         {% endcall %}
       </h2>
       {# Comme partout ailleurs : le champ prend la place de la valeur, sous l'intitulé
@@ -103,6 +103,16 @@
           {% if not origine_commune %}<td class="col-origine">{{ m.origine(r.origin) }}</td>{% endif %}
         </tr>
         {% endfor %}
+        {% if edition %}
+        {% set noms_lignes = rows|map(attribute='field')|list %}
+        {% for c in champs if c.champ not in noms_lignes %}
+        <tr class="ligne-champ">
+          <th>{{ c.libelle }}</th>
+          <td>{{ m.champ_cellule(c) }}</td>
+          {% if not origine_commune %}<td class="col-origine">{{ m.origine('manuel') }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+        {% endif %}
       </table>
       {% if edition %}
         <div class="barre-form">
@@ -118,5 +128,7 @@
     <h2>Adresses <span class="compte">{{ vlan.ips|length }}</span></h2>
     {{ l.liste(vlan.ips) }}
   </section>
+
+  {% if not edition %}{{ m.gestes_ligne(vlan) }}{% endif %}
 </div>
 {% endblock %}

@@ -1,8 +1,8 @@
 """Source Proxmox VE -> table Node (+ IP/MAC exposés à main.py pour la passe IPAM).
 
 Ne fait qu'une chose : interroger l'API Proxmox et renvoyer des dicts normalisés.
-Aucun appel Baserow ici (l'orchestration et la réconciliation vivent dans main.py
-et baserow.py) : ajouter une source ne doit jamais dupliquer cette logique.
+Aucun accès à la base ici (l'orchestration et la réconciliation vivent dans main.py
+et stockage.py) : ajouter une source ne doit jamais dupliquer cette logique.
 """
 
 import logging
@@ -298,7 +298,7 @@ def _parse_net0_mac(net0):
 
 
 def _bytes_to_gb(value):
-    """Le champ Baserow ram_gb/disk_gb est configuré sans décimale : arrondi à l'entier."""
+    """RAM_Gb et Disk_Gb sont des entiers : arrondi à l'entier."""
     if value is None:
         return None
     return round(value / (1024 ** 3))

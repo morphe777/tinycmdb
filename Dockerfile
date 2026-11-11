@@ -27,8 +27,8 @@ COPY --from=cup /cup /usr/local/bin/cup
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 RUN chmod +x /usr/local/bin/cup /usr/local/bin/trivy
 
-# UID fixe : le volume ./trivy-cache (bind-mount, voir compose.yaml) doit appartenir à cet
-# utilisateur côté hôte pour que Trivy puisse y écrire sa base de vulnérabilités.
+# UID fixe : le répertoire de la base (montage bind en /data, voir compose.yaml) doit
+# appartenir à cet utilisateur côté hôte pour que SQLite puisse y écrire.
 RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin tinycmdb
 
 WORKDIR /app
@@ -50,13 +50,17 @@ ARG TINYCMDB_BUILD_DATE=""
 ENV TINYCMDB_COMMIT=$TINYCMDB_COMMIT
 ENV TINYCMDB_BUILD_DATE=$TINYCMDB_BUILD_DATE
 
-# Le cache Trivy et le canal console/collecteur sont montés en volume. Les créer ici,
-# appartenant à l'utilisateur du conteneur, est ce qui rend un volume nommé utilisable :
-# Docker initialise un volume vide à partir du répertoire correspondant de l'image,
-# propriétaire et permissions compris. Sans ces répertoires, le volume est créé root, le
-# conteneur ne peut rien y écrire, et le message d'erreur ne désigne pas la cause — panne
-# classique des déploiements par Portainer.
-RUN mkdir -p /cache /signal && chown tinycmdb:tinycmdb /cache /signal
+# Le cache Trivy, le canal console/collecteur et la base sont montés en volume. Les créer
+# ici, appartenant à l'utilisateur du conteneur, est ce qui rend un volume nommé
+# utilisable : Docker initialise un volume vide à partir du répertoire correspondant de
+# l'image, propriétaire et permissions compris. Sans ces répertoires, le volume est créé
+# root, le conteneur ne peut rien y écrire, et le message d'erreur ne désigne pas la
+# cause — panne classique des déploiements par Portainer.
+#
+# /data fait exception en production : c'est un montage bind (le répertoire de l'hôte
+# que l'hôte sauvegarde), et un montage bind ne s'initialise pas depuis l'image. Le
+# répertoire côté hôte doit appartenir à l'UID 1000 — voir README, « Installation ».
+RUN mkdir -p /cache /signal /data && chown tinycmdb:tinycmdb /cache /signal /data
 
 USER tinycmdb
 

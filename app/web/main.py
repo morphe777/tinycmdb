@@ -1,18 +1,21 @@
-"""TinyCMDB — console web au-dessus de Baserow.
+"""TinyCMDB — console web, API et serveur MCP au-dessus de la base SQLite.
 
 Consultation, et modification des seuls champs que le collecteur ne réécrit jamais. La
 liste de ces champs est appliquée côté serveur (`ecriture.py`), pas dans les gabarits :
-l'interface décide ce qu'elle affiche, elle ne décide pas de ce qui est permis. Tout le
-reste du service ne connaît que `fetch_all`.
+l'interface décide ce qu'elle affiche, elle ne décide pas de ce qui est permis.
 
-Le token Baserow vit dans ce process et n'atteint jamais le navigateur — c'est la raison
-d'être de ce service plutôt qu'une page statique qui interrogerait Baserow directement.
-Un token de base Baserow ne se restreint ni par origine ni par ligne : exposé, il donne
-accès à toute la base, pas au seul écran affiché.
+Trois portes, un seul code :
+- l'interface (ce module, et `admin.py` pour l'administration) ;
+- l'API REST sous `/api/v1`, protégée par jeton (`api.py`) ;
+- le serveur MCP sous `/mcp`, mêmes jetons (`mcp_serveur.py`).
+
+L'interface n'a pas d'authentification propre : elle repose sur le filtrage du reverse
+proxy qui la publie. L'API et le MCP, eux, exigent un jeton créé dans l'administration.
 
 Démarrage : `uvicorn web.main:app --host 0.0.0.0 --port 8080` (voir compose.yaml).
 """
 
+import contextlib
 import logging
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlsplit, urlunsplit
@@ -21,12 +24,13 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from cmdb.depot import BaseInaccessible
 from starlette.datastructures import FormData
 
 import signaux
 import version
 
-from . import config, ecriture, schema, store
+from . import admin, api, config, ecriture, mcp_serveur, schema, store
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -35,19 +39,30 @@ logging.basicConfig(level=getattr(logging, cfg.LOG_LEVEL, logging.INFO),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("cmdb.web")
 
-if not cfg.BASEROW_VERIFY_TLS:
-    # Baserow est derrière un certificat interne signé par sa propre autorité. Sans ça,
-    # urllib3 écrit un avertissement par requête et le journal devient illisible — donc
-    # inutile, donc jamais lu le jour où il contient quelque chose.
-    import urllib3
+# Les icônes sont lues sur des applications internes, souvent derrière un certificat signé
+# par une autorité maison (voir favicons.py, verify_tls=False). Sans ça, urllib3 écrit un
+# avertissement par requête et le journal devient illisible.
+import urllib3
 
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-app = FastAPI(title="TinyCMDB", docs_url=None, redoc_url=None, openapi_url=None)
+data = store.Store(cfg)
+redacteur = ecriture.Redacteur(data.depot)
+serveur_mcp = mcp_serveur.creer(data, redacteur)
+
+
+@contextlib.asynccontextmanager
+async def _cycle_de_vie(_app):
+    # Le gestionnaire de sessions MCP doit tourner pendant toute la vie du service : monté
+    # comme sous-application, son propre cycle de vie ne serait jamais lancé.
+    async with serveur_mcp.session_manager.run():
+        yield
+
+
+app = FastAPI(title="TinyCMDB", docs_url=None, redoc_url=None, openapi_url=None,
+              lifespan=_cycle_de_vie)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
-data = store.Store(cfg)
-redacteur = ecriture.Redacteur(data.client, cfg)
 
 # Chemin d'URL vers type d'objet : l'inverse de store.URL_PREFIX, pour retrouver
 # la table visée par un formulaire à partir de l'adresse d'où il vient.
@@ -189,9 +204,16 @@ FICHE_FIELDS = {
 }
 
 
-def fiche_rows(obj):
+# Mode d'affichage d'un champ personnalisé, par type.
+MODE_PERSO = {"texte": "text", "long": "long", "url": "url", "entier": "text",
+              "bool": "bool", "date": "date", "select": "select", "multi": "multi"}
+
+
+def fiche_rows(snap, obj):
     rows = []
-    for field, mode in FICHE_FIELDS.get(obj.kind, []):
+    champs = list(FICHE_FIELDS.get(obj.kind, []))
+    champs += [(p["nom"], MODE_PERSO.get(p["type"], "text")) for p in snap.perso.get(obj.kind, [])]
+    for field, mode in champs:
         rows.append({
             "field": field,
             "mode": mode,
@@ -218,7 +240,7 @@ def _detail(request, kind, obj_id, edition=False, erreur=None, enregistres=0,
     obj = snap.get(kind, obj_id)
     if obj is None:
         raise HTTPException(status_code=404, detail=f"{kind} {obj_id} introuvable")
-    rows = fiche_rows(obj)
+    rows = fiche_rows(snap, obj)
     # Calculé à chaque affichage, y compris en consultation : c'est ce qui décide de la
     # présence du bouton « Modifier ». Une ligne dont aucun champ n'est à toi ne doit pas
     # proposer une porte qui ne mène nulle part.
@@ -244,17 +266,17 @@ def _detail(request, kind, obj_id, edition=False, erreur=None, enregistres=0,
 # Un formulaire HTML sans champ fichier s'envoie en `application/x-www-form-urlencoded`,
 # que la bibliothèque standard sait lire. `request.form()` de Starlette exige, lui,
 # `python-multipart` — un analyseur de formats composites dont ce service n'a aucun usage
-# (Baserow n'accepte de toute façon pas de fichier avec un database token). Dix lignes ici
+# (un import CSV se colle dans une zone de texte, il ne s'envoie pas en fichier). Dix lignes ici
 # évitent une dépendance de plus et un analyseur de plus exposé au navigateur.
 TAILLE_MAX_FORMULAIRE = 256 * 1024
 
 
-async def _formulaire(request):
+async def _formulaire(request, limite=TAILLE_MAX_FORMULAIRE):
     type_contenu = (request.headers.get("content-type") or "").split(";")[0].strip()
     if type_contenu != "application/x-www-form-urlencoded":
         raise HTTPException(status_code=415, detail="formulaire attendu")
     corps = await request.body()
-    if len(corps) > TAILLE_MAX_FORMULAIRE:
+    if len(corps) > limite:
         raise HTTPException(status_code=413, detail="formulaire trop volumineux")
     # keep_blank_values : un champ texte qu'on vient de vider arrive comme chaîne vide, et
     # doit être distingué d'un champ absent — c'est précisément ce qui efface une valeur.
@@ -365,10 +387,21 @@ def stack_detail(request: Request, key: str, rattaches: int = Query(-1),
                   rattaches=rattaches, erreur=erreur)
 
 
-@app.get("/ipam")
-def ipam(request: Request):
+def _vue_ipam(request, nouveau=False, creation_erreur=None, creation=None, code=200):
     snap = snapshot()
-    return render(request, "ipam.html", snap, orphans=[ip for ip in snap.ips if not ip.vlan])
+    creation_champs = ecriture.formulaire_creation(snap, "vlan")
+    if creation is not None:
+        for descr in creation_champs:
+            descr["valeur"] = creation.get(descr["champ"], descr["valeur"])
+    return render(request, "ipam.html", snap, orphans=[ip for ip in snap.ips if not ip.vlan],
+                  creation_champs=creation_champs,
+                  creation_ouverte=bool(nouveau or creation_erreur),
+                  creation_erreur=creation_erreur, status_code=code)
+
+
+@app.get("/ipam")
+def ipam(request: Request, nouveau: int = Query(0)):
+    return _vue_ipam(request, nouveau=nouveau)
 
 
 def _detail_vlan(request, obj_id, edition=False, erreur=None, enregistres=0,
@@ -379,7 +412,7 @@ def _detail_vlan(request, obj_id, edition=False, erreur=None, enregistres=0,
     vlan = snap.get("vlan", obj_id)
     if vlan is None:
         raise HTTPException(status_code=404, detail="VLAN introuvable")
-    rows = fiche_rows(vlan)
+    rows = fiche_rows(snap, vlan)
     champs = ecriture.formulaire(snap, vlan)
     if saisie is not None:
         for descr in champs:
@@ -537,7 +570,7 @@ async def modifier(request: Request, prefixe: str, obj_id: int):
     except ecriture.EcritureRefusee as exc:
         return reafficher(str(exc), 400)
     except ecriture.EcritureImpossible as exc:
-        return reafficher(f"Baserow a refusé l'enregistrement : {exc}", 502)
+        return reafficher(f"La base a refusé l'enregistrement : {exc}", 503)
 
     if changements or rattaches:
         # L'instantané en mémoire est antérieur à l'écriture : sans ce rechargement, la
@@ -574,8 +607,8 @@ async def creer_ip(request: Request):
         nouvel_id = redacteur.creer(snap, "ipam", donnees)
     except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
         message = str(exc) if isinstance(exc, ecriture.EcritureRefusee) \
-            else f"Baserow a refusé la création : {exc}"
-        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 502
+            else f"La base a refusé la création : {exc}"
+        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 503
         return _detail_vlan(request, vlan_id, creation_erreur=message, code=code,
                             creation=ecriture.saisie_brute(
                                 snap, ecriture.formulaire_creation(snap, "ipam"), donnees))
@@ -593,8 +626,8 @@ async def creer_application(request: Request):
         nouvel_id = redacteur.creer(snap, "application", donnees)
     except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
         message = str(exc) if isinstance(exc, ecriture.EcritureRefusee) \
-            else f"Baserow a refusé la création : {exc}"
-        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 502
+            else f"La base a refusé la création : {exc}"
+        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 503
         return _vue_applications(request, creation_erreur=message, code=code,
                                  creation=ecriture.saisie_brute(
                                      snap, ecriture.formulaire_creation(snap, "application"), donnees))
@@ -619,8 +652,8 @@ async def creer_noeud(request: Request):
         nouvel_id = redacteur.creer(snap, "node", donnees)
     except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
         message = str(exc) if isinstance(exc, ecriture.EcritureRefusee) \
-            else f"Baserow a refusé la création : {exc}"
-        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 502
+            else f"La base a refusé la création : {exc}"
+        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 503
         return _vue_infra(request, creation_erreur=message, code=code,
                           creation=ecriture.saisie_brute(
                               snap, ecriture.formulaire_creation(snap, "node"), donnees))
@@ -628,23 +661,73 @@ async def creer_noeud(request: Request):
     return RedirectResponse(f"/noeud/{nouvel_id}?cree=1", status_code=303)
 
 
-@app.post("/rafraichir")
-def rafraichir(request: Request):
-    """Force un rechargement immédiat. Utile après avoir corrigé quelque chose dans
-    Baserow sans vouloir attendre l'expiration du cache.
-
-    Le retour se fait sur la page d'où l'on vient, mais uniquement si c'est un chemin de
-    ce site : renvoyer l'utilisateur vers une URL fournie par un en-tête, c'est offrir une
-    redirection ouverte à qui sait la déclencher.
-    """
+@app.post("/creer/vlan")
+async def creer_vlan(request: Request):
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    donnees = await _formulaire(request)
+    snap = snapshot()
+    try:
+        nouvel_id = redacteur.creer(snap, "vlan", donnees)
+    except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
+        message = str(exc) if isinstance(exc, ecriture.EcritureRefusee) \
+            else f"La base a refusé la création : {exc}"
+        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 503
+        return _vue_ipam(request, creation_erreur=message, code=code,
+                         creation=ecriture.saisie_brute(
+                             snap, ecriture.formulaire_creation(snap, "vlan"), donnees))
     snapshot(force=True)
-    referer = request.headers.get("referer") or ""
-    retour = "/"
-    if referer and _meme_origine(request):
-        parsed = urlsplit(referer)
-        if parsed.path.startswith("/"):
-            retour = urlunsplit(("", "", parsed.path, parsed.query, ""))
+    return RedirectResponse(f"/vlan/{nouvel_id}?enregistres=-1", status_code=303)
+
+
+@app.post("/supprimer/{prefixe}/{obj_id}")
+async def supprimer(request: Request, prefixe: str, obj_id: int):
+    """Supprime une ligne, sur confirmation explicite (case cochée).
+
+    La ligne entière part au journal : sans porte de secours vers la base, c'est ce qui
+    permet de retrouver ce qu'on vient d'effacer, et de le ressaisir.
+    """
+    kind = KIND_PAR_PREFIXE.get(prefixe)
+    if kind is None:
+        raise HTTPException(status_code=404, detail="type inconnu")
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    donnees = await _formulaire(request)
+    if donnees.get("confirme") != "1":
+        raise HTTPException(status_code=400, detail="suppression non confirmée")
+    snap = snapshot()
+    obj = snap.get(kind, obj_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail=f"{kind} {obj_id} introuvable")
+    try:
+        redacteur.supprimer(obj)
+    except ecriture.EcritureRefusee as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    snapshot(force=True)
+    retour = {"node": "/infra", "container": "/stacks", "image": "/securite",
+              "ipam": f"/vlan/{obj.vlan.id}" if kind == "ipam" and obj.vlan else "/ipam",
+              "vlan": "/ipam", "application": "/applications"}[kind]
     return RedirectResponse(retour, status_code=303)
+
+
+@app.post("/provenance/{prefixe}/{obj_id}")
+def provenance(request: Request, prefixe: str, obj_id: int):
+    """Bascule Source entre Auto et Manual sur un nœud ou une adresse."""
+    kind = KIND_PAR_PREFIXE.get(prefixe)
+    if kind not in ("node", "ipam"):
+        raise HTTPException(status_code=404, detail="type sans provenance")
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    snap = snapshot()
+    obj = snap.get(kind, obj_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail=f"{kind} {obj_id} introuvable")
+    try:
+        redacteur.basculer_source(obj)
+    except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    snapshot(force=True)
+    return RedirectResponse(obj.url, status_code=303)
 
 
 @app.post("/rattacher/stack")
@@ -696,7 +779,7 @@ async def rattacher_application(request: Request, obj_id: int):
 def collecter(request: Request, passe: str):
     """Demande au collecteur de repasser tout de suite, sans attendre son intervalle.
 
-    La console n'écrit rien dans Baserow ici et n'attend pas le résultat : elle pose une
+    La console n'écrit rien dans la base ici et n'attend pas le résultat : elle pose une
     demande, le collecteur la relève dans les deux secondes et travaille à son rythme.
     Attendre la fin de la collecte dans la requête HTTP ferait une page qui tourne dix
     minutes, et un redémarrage de la console pendant ce temps annulerait tout.
@@ -712,49 +795,48 @@ def collecter(request: Request, passe: str):
     return RedirectResponse(f"/etat?demande={passe}", status_code=303)
 
 
-@app.exception_handler(store.BaserowIndisponible)
-def baserow_indisponible(request: Request, exc: store.BaserowIndisponible):
-    """Baserow hors service au démarrage à froid : une page qui désigne la vraie cause
-    plutôt qu'une trace d'erreur, qui ferait chercher le défaut dans la console."""
+@app.exception_handler(store.BaseIndisponible)
+@app.exception_handler(BaseInaccessible)
+def base_indisponible(request: Request, exc: Exception):
+    """Base illisible au démarrage à froid : une page qui désigne la vraie cause plutôt
+    qu'une trace d'erreur, qui ferait chercher le défaut dans la console."""
     logger.warning("Instantané indisponible : %s", exc)
     return templates.TemplateResponse(
         request, "indisponible.html",
-        {"url": cfg.BASEROW_URL, "detail": str(exc),
+        {"url": cfg.DB_PATH, "detail": str(exc),
          "css_version": actif_version("console.css"),
          "js_version": actif_version("console.js"),
          "version": version.libelle()},
         status_code=503)
 
 
-# --------------------------------------------------------------------------- API
-#
-# Une seule route, en JSON, en lecture seule. Elle existe parce qu'un outil tiers a besoin
-# de savoir ce que la CMDB sait — quelle stack sert quelle application, et quelle criticité
-# porte cette application — sans lire Baserow par-dessus son épaule ni recopier ses
-# conventions de nommage.
-#
-# Elle rend des faits, pas des décisions. « Cette stack est-elle éligible à une mise à
-# jour automatique » ne se demande pas ici : c'est une politique, elle appartient à qui
-# met à jour. La CMDB dit ce qui est, l'outil décide ce qu'il en fait — c'est ce qui
-# permet aux deux d'exister séparément.
-#
-# Pas d'authentification propre : la route expose exactement ce que la page /stacks montre
-# déjà en HTML, sur le même service, derrière la même adresse d'écoute.
+# --------------------------------------------------------------------------- portes
+
+# Administration : même gabarits, même absence d'authentification que le reste de
+# l'interface (voir l'en-tête de ce module).
+app.include_router(admin.creer_routeur(data, redacteur, templates, render, _formulaire,
+                                       _meme_origine, cfg))
+
+# API REST : application distincte, pour avoir sa propre documentation OpenAPI sous
+# /api/v1/docs sans ouvrir celle de l'interface, qui n'en a pas.
+app.mount("/api/v1", api.creer(data, redacteur))
 
 
 @app.get("/api/stacks")
-def api_stacks():
-    """Les stacks, leurs applications et la criticité de celles-ci."""
-    snap = snapshot()
-    return [{
-        "nom": st.name,
-        "cle": st.key,
-        "hote": st.host.name if st.host else None,
-        "chemin": st.compose_path,
-        "conteneurs": [c.name for c in st.containers],
-        "applications": [{"nom": a.name, "criticite": a.sel("Criticality")}
-                         for a in sorted(st.apps, key=lambda a: a.name.lower())],
-    } for st in sorted(snap.stacks, key=lambda st: st.key.lower())]
+def api_stacks(request: Request):
+    """Ancienne adresse de la liste des stacks, désormais sous jeton comme le reste.
+
+    Elle répond toujours, à l'identique, pour l'outil qui la lit — mais exige un jeton :
+    une application qui n'en présente pas reçoit un 401 qui dit où en créer un.
+    """
+    api.exiger_jeton(data, request, "lecture")
+    return api.stacks_v0(snapshot())
+
+
+# Serveur MCP : une route ASGI brute plutôt qu'un montage, pour qu'il réponde sur /mcp
+# exactement — un montage n'accepte que /mcp/…, et un client MCP poste sur /mcp.
+app.router.add_route("/mcp", mcp_serveur.application(serveur_mcp, data),
+                     include_in_schema=False)
 
 
 @app.get("/livez", response_class=PlainTextResponse)
@@ -762,14 +844,14 @@ def livez():
     """Le process répond — rien de plus, et c'est voulu.
 
     C'est cette sonde que surveille Docker. `/healthz` charge l'inventaire, donc échoue
-    quand Baserow est indisponible : l'utiliser ferait redémarrer la console en boucle
-    pour une panne qui n'est pas la sienne, et qu'un redémarrage n'arrange pas.
+    quand la base est illisible : l'utiliser ferait redémarrer la console en boucle pour
+    une panne qu'un redémarrage n'arrange pas.
     """
     return "ok"
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
-    """Le service est-il en mesure de répondre utilement — Baserow compris."""
+    """Le service est-il en mesure de répondre utilement — base comprise."""
     snap = snapshot()
     return f"ok {len(snap.nodes)} noeuds {len(snap.containers)} conteneurs"

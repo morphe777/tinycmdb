@@ -1,0 +1,96 @@
+{% extends "admin/cadre.html" %}
+{% block titre %}Jetons — Administration{% endblock %}
+{% block titre_admin %}Jetons API / MCP{% endblock %}
+
+{% block admin %}
+<p class="intro">Un jeton par application ou par agent : il se révoque seul, sans toucher
+  aux autres, et le journal attribue chaque écriture à son nom. Un jeton <b>lecture</b>
+  consulte ; un jeton <b>écriture</b> modifie en plus les champs manuels et crée des lignes,
+  aux mêmes règles que les formulaires. Aucun ne supprime.</p>
+
+{% if nouveau %}
+<section class="bloc bloc-secret" role="alert">
+  <h2>Jeton « {{ nouveau.nom }} » créé</h2>
+  <p>Le copier maintenant : <b>il ne sera plus jamais affiché</b>. Seule son empreinte est
+    conservée.</p>
+  <pre class="secret"><code>{{ nouveau.secret }}</code></pre>
+  <details>
+    <summary>Exemples d'utilisation</summary>
+    <p>API :</p>
+    <pre class="mono"><code>curl -H "Authorization: Bearer {{ nouveau.secret }}" {{ base_url }}/api/v1/</code></pre>
+    <p>Serveur MCP (transport HTTP) — par exemple pour Claude Code :</p>
+    <pre class="mono"><code>claude mcp add --transport http tinycmdb {{ base_url }}/mcp \
+  --header "Authorization: Bearer {{ nouveau.secret }}"</code></pre>
+  </details>
+</section>
+{% endif %}
+
+<section class="bloc">
+  <h2>Nouveau jeton</h2>
+  <form method="post" action="/admin/jetons/creer" class="edition grille-form">
+    <div class="champ">
+      <label for="j-nom">Nom</label>
+      <input id="j-nom" type="text" name="nom" maxlength="80" required placeholder="agent-ops, updater, homepage…">
+    </div>
+    <div class="champ">
+      <label for="j-droits">Droits</label>
+      <select id="j-droits" name="droits">
+        <option value="lecture">lecture</option>
+        <option value="ecriture">lecture et écriture</option>
+      </select>
+    </div>
+    <div class="champ">
+      <label for="j-exp">Expire après (jours)</label>
+      <input id="j-exp" type="number" min="0" name="expire" placeholder="jamais">
+    </div>
+    <div class="barre-form"><button type="submit" class="bouton bouton-primaire">Créer le jeton</button></div>
+  </form>
+</section>
+
+<section class="bloc">
+  <h2>Jetons <span class="compte">{{ jetons|length }}</span></h2>
+  {% if jetons %}
+  <div class="tbl-scroll"><table class="tbl">
+    <thead><tr><th>Nom</th><th>Préfixe</th><th>Droits</th><th>Créé</th><th>Expire</th><th>Dernier usage</th><th></th></tr></thead>
+    <tbody>
+    {% for j in jetons %}
+    <tr class="{{ 'ligne-revoquee' if j.revoque }}">
+      <td><a href="/admin/journal?acteur={{ (':' ~ j.nom)|urlencode }}">{{ j.nom }}</a></td>
+      <td class="mono">{{ j.prefixe }}…</td>
+      <td>{{ 'écriture' if j.droits == 'ecriture' else 'lecture' }}</td>
+      <td>{{ j.cree[:10] }}</td>
+      <td>{{ j.expire[:10] if j.expire else 'jamais' }}</td>
+      <td>{{ j.dernier_usage[:16]|replace('T', ' ') if j.dernier_usage else 'jamais' }}</td>
+      <td>
+        {% if j.revoque %}
+        <span class="badge badge-neutre">révoqué {{ j.revoque[:10] }}</span>
+        <form method="post" action="/admin/jetons/{{ j.id }}/supprimer" class="en-ligne">
+          <button type="submit" class="bouton bouton-mini">Supprimer</button>
+        </form>
+        {% else %}
+        <form method="post" action="/admin/jetons/{{ j.id }}/revoquer" class="en-ligne">
+          <button type="submit" class="bouton bouton-mini bouton-danger">Révoquer</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="rien">Aucun jeton : l'API et le serveur MCP refusent toute requête.</p>
+  {% endif %}
+</section>
+
+<section class="bloc">
+  <h2>Points d'accès</h2>
+  <table class="fiche">
+    <tr><th>API REST</th><td><code>{{ base_url }}/api/v1/</code> — documentation : <a href="/api/v1/docs">/api/v1/docs</a></td></tr>
+    <tr><th>Serveur MCP</th><td><code>{{ base_url }}/mcp</code> — transport HTTP (streamable), sans état</td></tr>
+    <tr><th>Guide de l'agent</th><td>outil <code>guide</code> du serveur MCP, ou <code>GET /api/v1/guide</code></td></tr>
+    <tr><th>En-tête</th><td><code>Authorization: Bearer &lt;jeton&gt;</code></td></tr>
+  </table>
+  <p class="note">Si le reverse proxy filtre l'interface par adresse source, il peut ouvrir
+    plus largement <code>/api/</code> et <code>/mcp</code> : ces deux chemins exigent un jeton.</p>
+</section>
+{% endblock %}

@@ -20,6 +20,13 @@ services:
     env_file:
       - .env
     volumes:
+      # La base de l'inventaire (tinycmdb.db) et ses copies de sauvegarde (backups/).
+      # Montage bind et non volume nommé : c'est un répertoire de l'hôte, que l'hôte
+      # sauvegarde avec le reste. Monté dans les deux services — le collecteur et la
+      # console écrivent dans le même fichier (voir app/cmdb/db.py). Disque local
+      # uniquement : sur un partage SMB ou NFS, les verrous de SQLite ne tiennent pas.
+      # Le répertoire doit appartenir à l'UID 1000 (voir README, « Installation »).
+      - ${TINYCMDB_DATA:-./data}:/data
       # Base de vulnérabilités Trivy (~1 Go, voir sources/trivy.py) : persistante, sinon
       # retéléchargée en entier à chaque redémarrage. Volume nommé plutôt que montage
       # depuis le répertoire du projet : rien à préparer à la main, le répertoire existe
@@ -49,6 +56,7 @@ services:
     depends_on:
       - collector
     volumes:
+      - ${TINYCMDB_DATA:-./data}:/data
       - signal:/signal
     command: ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8080",
               "--no-server-header", "--proxy-headers"]
@@ -60,8 +68,9 @@ services:
       # Remplacer par l'IP réelle de l'hôte (voir README.md).
       - "192.168.10.11:8080:8080"
     # /livez et non /healthz : le premier ne répond que du process, le second charge
-    # l'inventaire depuis Baserow. Baserow indisponible ferait redémarrer la console en
-    # boucle pour une panne qui n'est pas la sienne, et qu'un redémarrage n'arrange pas.
+    # l'inventaire. Une base illisible (répertoire mal monté, droits) ferait redémarrer
+    # la console en boucle pour une panne qu'un redémarrage n'arrange pas — et la page
+    # d'erreur, qui dit quoi corriger, ne serait jamais affichée.
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez').read()"]

@@ -1,0 +1,21 @@
+<div class="tbl-scroll"><table class="tbl tbl-journal">
+  <thead><tr><th>Quand</th><th>Qui</th><th>Action</th><th>Objet</th><th>Champ</th><th>Avant</th><th>Après</th></tr></thead>
+  <tbody>
+  {% for e in (entrees if entrees is defined else journal) %}
+  <tr class="{{ 'ligne-crit' if e.action == 'suppression' }}">
+    <td class="mono">{{ e.quand[:19]|replace('T', ' ') }}</td>
+    <td><a href="/admin/journal?acteur={{ e.acteur|urlencode }}">{{ e.acteur }}</a></td>
+    <td>{{ e.action }}</td>
+    <td>
+      {% if e.obj %}<a href="{{ e.obj.url }}">{{ e.libelle }}</a>
+      {% else %}{{ e.libelle or '' }}{% endif %}
+      {% if e.tab %}<span class="vide">{{ e.table_libelle if e.table_libelle is defined else e.tab }}</span>{% endif %}
+      {% if e.tab and e.ligne_id %}<a class="vide" href="/admin/journal?table={{ e.tab }}&id={{ e.ligne_id }}">historique</a>{% endif %}
+    </td>
+    <td>{{ e.champ or '' }}</td>
+    <td class="journal-valeur">{% if e.action == 'suppression' %}<details><summary>contenu</summary><code>{{ e.avant }}</code></details>{% else %}{{ e.avant or '' }}{% endif %}</td>
+    <td class="journal-valeur">{{ e.apres or '' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>

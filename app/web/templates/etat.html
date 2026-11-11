@@ -103,9 +103,8 @@
           les deux secondes et travaille à son rythme. Rechargez cette page pour suivre son
           avancement. Une demande posée pendant que le collecteur est arrêté sera honorée à
           son redémarrage.</p>
-        <p>Les données affichées par la console viennent de Baserow, pas du collecteur :
-          une fois la collecte terminée, <b>Recharger depuis Baserow</b> en pied de page
-          fait apparaître le résultat.</p>
+        <p>Le collecteur écrit dans la base au fil de la collecte, et la console relit la
+          base dès qu'elle a changé : le résultat apparaît en rechargeant la page.</p>
       {% endcall %}
     </h2>
 
@@ -304,10 +303,10 @@
     <table class="fiche">
       <tr><th>Version</th><td><code>{{ version_longue }}</code></td></tr>
       <tr><th>Pris</th><td>{{ snap.fetched_at|datefr }} <span class="vide">({{ snap.fetched_at|ago }})</span></td></tr>
-      <tr><th>Durée de vie du cache</th><td>{{ snap.cfg.CACHE_TTL }} s</td></tr>
-      <tr><th>Baserow</th><td><code>{{ snap.cfg.BASEROW_URL }}</code></td></tr>
-      <tr><th>Écriture</th><td>champs manuels, réservation d'adresses, déclaration
-        d'applications — aucune suppression</td></tr>
+      <tr><th>Base</th><td><code>{{ snap.cfg.DB_PATH }}</code></td></tr>
+      <tr><th>Sauvegardes</th><td><code>{{ snap.cfg.BACKUP_DIR }}</code> —
+        <a href="/admin/sauvegardes">gérer</a></td></tr>
+      <tr><th>Relecture</th><td>dès qu'une écriture a eu lieu, collecteur compris</td></tr>
     </table>
   </section>
 </div>

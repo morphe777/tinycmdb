@@ -179,7 +179,7 @@
 {%- endmacro %}
 
 {#
-  Étiquette d'une liste déroulante, à la couleur choisie dans Baserow. Reprendre ce
+  Étiquette d'une liste déroulante, à la couleur choisie dans l'administration. Reprendre ce
   réglage plutôt que d'inventer une palette évite deux codes couleur concurrents pour la
   même donnée — et il se met à jour tout seul quand la couleur change dans la base.
 #}
@@ -272,6 +272,17 @@
     <input id="{{ cid }}" name="{{ nom }}" type="url" placeholder="https://…"
            value="{{ c.valeur or '' }}">
 
+  {% elif c.widget == 'date' %}
+    <input id="{{ cid }}" name="{{ nom }}" type="date" value="{{ c.valeur or '' }}">
+
+  {% elif c.widget.startswith('lien1:') %}
+    <select id="{{ cid }}" name="{{ nom }}">
+      <option value="">— aucun —</option>
+      {% for cible in c.cibles %}
+      <option value="{{ cible.id }}" {% if cible.id == c.valeur %}selected{% endif %}>{{ cible.name }}</option>
+      {% endfor %}
+    </select>
+
   {% elif c.widget == 'ip' %}
     <input id="{{ cid }}" name="{{ nom }}" type="text" inputmode="decimal"
            placeholder="192.168.0.1" value="{{ c.valeur or '' }}" spellcheck="false">
@@ -289,7 +300,7 @@
       {% endfor %}
     </select>
     {% else %}
-    <p class="rien-champ">Aucune option employée dans la base pour ce champ.</p>
+    <p class="rien-champ">Aucune option définie : elles se créent dans <a href="/admin/listes">Administration → Listes</a>.</p>
     {% endif %}
 
   {% elif c.widget == 'multi' or c.widget.startswith('lien:') %}
@@ -357,7 +368,7 @@
         <label data-libelle="{{ o }}"><input type="checkbox" name="{{ nom }}" value="{{ o }}"
                {% if o in c.valeur %}checked{% endif %}><span>{{ o }}</span></label>
         {% else %}
-        <p class="rien-champ">Aucune option employée dans la base pour ce champ.</p>
+        <p class="rien-champ">Aucune option définie : elles se créent dans <a href="/admin/listes">Administration → Listes</a>.</p>
         {% endfor %}
       {% else %}
         {% for cible in c.cibles %}
@@ -438,4 +449,42 @@
 {%- elif n == 0 %}
 <p class="bandeau">Aucun changement : le rattachement était déjà celui-là.</p>
 {%- endif -%}
+{%- endmacro %}
+
+
+{#
+  Gestes sur la ligne entière : rendre une ligne au collecteur ou l'en protéger, et la
+  supprimer. Rangés au bas de la fiche, repliés : ce sont des gestes rares, et l'un est
+  sans retour. La suppression demande une case cochée — une confirmation qui tient sans
+  JavaScript, comme le reste de la console.
+#}
+{% macro gestes_ligne(obj) -%}
+{%- set prefixe = obj.url.split('/')[1] -%}
+<details class="bloc gestes">
+  <summary>Gestes sur la ligne</summary>
+  {% if obj.kind in ('node', 'ipam') %}
+  <form method="post" action="/provenance/{{ prefixe }}/{{ obj.id }}" class="geste">
+    {% if obj.is_manual %}
+    <p>Ligne <b>saisie à la main</b> : le collecteur ne la met pas à jour et ne la supprimera
+      jamais. La lui rendre le laisse réécrire ses champs automatiques — et la supprimer s'il
+      ne la voit plus.</p>
+    <button type="submit" class="bouton">Rendre au collecteur (Source = Auto)</button>
+    {% else %}
+    <p>Ligne <b>tenue par le collecteur</b>. La protéger fige ses valeurs actuelles : il ne
+      la mettra plus à jour et ne la supprimera plus, mais tous ses champs deviennent
+      modifiables.</p>
+    <button type="submit" class="bouton">Protéger (Source = Manual)</button>
+    {% endif %}
+  </form>
+  {% endif %}
+  <form method="post" action="/supprimer/{{ prefixe }}/{{ obj.id }}" class="geste geste-danger">
+    <p>Supprimer <b>{{ obj.name }}</b> pour de bon. Les liens qui pointaient vers cette ligne
+      sont vidés ; son contenu reste lisible dans le <a href="/admin/journal">journal</a>.
+      {% if not obj.is_manual and obj.kind in ('node', 'container', 'image', 'ipam') %}
+      Si le collecteur la voit encore, il la recréera à son prochain passage.{% endif %}</p>
+    <label class="bascule"><input type="checkbox" name="confirme" value="1" required>
+      je confirme la suppression</label>
+    <button type="submit" class="bouton bouton-danger">Supprimer</button>
+  </form>
+</details>
 {%- endmacro %}

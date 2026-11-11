@@ -1,5 +1,6 @@
-"""Ordonnancement : deux passes à des périodes distinctes, dans une boucle du
-programme (pas de cron dans le conteneur, pas de `docker run --rm` depuis l'hôte).
+"""Ordonnancement : les passes de collecte à des périodes distinctes, et la sauvegarde
+de la base, dans une boucle du programme (pas de cron dans le conteneur, pas de
+`docker run --rm` depuis l'hôte).
 """
 
 import ipaddress
@@ -11,11 +12,13 @@ from datetime import datetime, timezone
 
 import signaux
 import version
+from cmdb import sauvegarde
+from cmdb.depot import Depot
 
 from . import config
 from . import netcheck
 from . import oui
-from .baserow import BaserowClient
+from .stockage import Stockage
 from .sources import cup as cup_source
 from .sources import docker as docker_source
 from .sources import proxmox as proxmox_source
@@ -29,13 +32,13 @@ def _drop_none(fields):
 
 
 def _multiselect_values(row, field):
-    """Un multiple_select revient de Baserow comme une liste d'objets {id, value, color} —
+    """Un multiple_select revient comme une liste d'objets {id, value, color} —
     extrait juste les valeurs, casse d'origine préservée (nécessaire pour la fusion/écriture)."""
     return {opt.get("value") for opt in (row.get(field) or [])}
 
 
 def _has_role(row, role_name):
-    """Comparaison insensible à la casse : le libellé d'une option Baserow est éditable
+    """Comparaison insensible à la casse : le libellé d'une option est éditable
     (ex. 'hypervisor' renommé en 'Hypervisor'), la détection d'un rôle ne doit pas en dépendre —
     contrairement à _multiselect_values, dont le résultat sert à réécrire `Roles` et doit donc
     garder la casse exacte."""
@@ -76,7 +79,7 @@ def run_node_pass(client, cfg):
             parent_name = n["parent_name"]
             if parent_name:
                 # insensible à la casse : un hyperviseur peut avoir été renommé à la main
-                # dans Baserow ("biggy" -> "Biggy") sans que le nom réel côté Proxmox (le
+                # depuis la console ("biggy" -> "Biggy") sans que le nom réel côté Proxmox (le
                 # hostname Linux, non modifiable) ne suive.
                 parent_match = _ci_node_index(node_cache).get(parent_name.lower())
                 parent_row = parent_match[1] if parent_match else None
@@ -91,10 +94,9 @@ def run_node_pass(client, cfg):
 
             if n["type"] == "Physical":
                 # Proxmox ne possède que l'option "Hypervisor" dans `Roles` : les autres tags
-                # (Docker, Database, ...) sont posés à la main dans Baserow. `Roles` étant un
-                # multiple_select, Baserow remplace la liste entière au PATCH — il faut donc
+                # (Docker, Database, ...) sont posés à la main depuis la console. `Roles` étant
+                # une liste multiple, l'écriture remplace la liste entière — il faut donc
                 # fusionner avec l'existant plutôt qu'écraser, sous peine d'effacer un tag manuel.
-                # Le libellé exact de l'option doit matcher Baserow ("Hypervisor", H majuscule).
                 existing_roles = _multiselect_values(existing_row, "Roles") if existing_row else set()
                 fields["Roles"] = sorted(existing_roles | {"Hypervisor"})
 
@@ -112,7 +114,7 @@ def run_node_pass(client, cfg):
                     "ip_type": n.get("ip_type"),
                 }
         except Exception:
-            # une ligne en échec (ex. champ Baserow manquant) ne doit pas bloquer les autres
+            # une ligne en échec (ex. valeur refusée par la base) ne doit pas bloquer les autres
             logger.exception("Écriture Node '%s' en échec, passage au suivant", n["name"])
 
     client.delete_missing(
@@ -123,7 +125,7 @@ def run_node_pass(client, cfg):
 
 
 def _load_vlan_networks(client, table_vlan):
-    """Lecture seule : les VLAN sont une référence déjà maintenue à la main dans Baserow."""
+    """Lecture seule : les VLAN sont une référence maintenue à la main depuis la console."""
     networks = []
     for row in client.fetch_all(table_vlan):
         subnet = row.get("subnet")
@@ -159,10 +161,8 @@ def _resolve_fqdn(ip, hint):
         return None
 
 
-# Les noms de champs IPAM sont ceux affichés dans Baserow, pas une convention à nous : ils ont
-# déjà changé une fois (tout est passé en casse capitalisée). Un futur renommage de colonne
-# (pas juste d'option) cassera ces écritures silencieusement — Baserow ignore un champ inconnu
-# plutôt que de renvoyer une erreur.
+# Les noms de champs IPAM sont ceux du modèle (cmdb/modele.py). Un champ inconnu y est refusé
+# avec une erreur, ligne par ligne — il ne disparaît plus en silence comme avec Baserow.
 def run_ipam_pass(client, cfg, node_cache, guest_ip_data):
     """Proxmox (IP/MAC) -> IPAM. Toujours après Node (règle 2 : `IPAM.Node` doit pouvoir
     résoudre vers une ligne Node déjà en cache). Ne s'exécute qu'aux passages Proxmox : pas
@@ -210,7 +210,7 @@ def run_ipam_pass(client, cfg, node_cache, guest_ip_data):
             # il ne voit que ce qui est assigné à un guest qu'il connaît déjà.
             "Status": status,
             "Type": data.get("ip_type"),
-            # forme entière de l'adresse : tri/filtrage numérique correct dans Baserow
+            # forme entière de l'adresse : tri/filtrage numérique correct
             # ("192.168.10.9" < "192.168.10.10" trie mal en texte)
             "IP_int": int(ipaddress.ip_address(ip)),
             "Vendor": oui.lookup(data.get("mac")),
@@ -290,7 +290,7 @@ def _ci_node_index(node_cache):
 
 def _resolve_docker_targets(cfg, node_cache):
     """Liste des hôtes Docker à scanner : DOCKER_HOSTS (explicite, prioritaire) fusionné
-    avec tout Node dont `roles` contient "docker" (tag posé à la main dans Baserow).
+    avec tout Node dont `roles` contient "docker" (tag posé à la main depuis la console).
 
     Convention d'URL pour les hôtes découverts : http://{Node.name}{SUFFIX}:{PORT}. Un hôte
     hors Proxmox (pas de Node correspondant) doit passer par DOCKER_HOSTS, seule façon de lui
@@ -367,7 +367,7 @@ def run_container_pass(client, cfg, node_cache):
                 )
                 seen_containers.add(uid)
             except Exception:
-                # un conteneur en échec (ex. valeur d'option Baserow inconnue) ne doit pas
+                # un conteneur en échec (ex. valeur refusée par la base) ne doit pas
                 # empêcher les autres d'être traités, ni faire planter tout le collecteur
                 logger.exception("Écriture conteneur '%s' (%s) en échec, conteneur suivant", c["name"], host_name)
 
@@ -503,6 +503,37 @@ def run_trivy_pass(client, cfg):
             logger.exception("Scan Trivy de l'image '%s' en échec, image suivante", reference)
 
 
+def run_sauvegarde(depot, cfg):
+    """Copie de la base si la précédente a dépassé l'intervalle réglé dans
+    l'administration. Repérée par la date du fichier le plus récent, et non par une
+    horloge du process : un redémarrage du collecteur ne déclenche pas une copie de plus.
+
+    Profite du passage pour purger le journal au-delà de sa durée de conservation.
+    """
+    intervalle = depot.parametre_entier("sauvegarde_intervalle_heures", 24)
+    if intervalle <= 0:
+        return False
+    derniere = sauvegarde.derniere(cfg.BACKUP_DIR)
+    if derniere is not None:
+        age = (datetime.now(timezone.utc) - derniere["date"]).total_seconds() / 3600
+        if age < intervalle:
+            return False
+    try:
+        sauvegarde.sauvegarder(cfg.DB_PATH, cfg.BACKUP_DIR,
+                               depot.parametre_entier("sauvegarde_conservation", 14))
+    except Exception:
+        # Règle 8 : une sauvegarde en échec n'arrête pas la collecte. Elle se voit sur la
+        # page État, où l'âge de la dernière copie passe en alerte.
+        logger.exception("Sauvegarde de la base en échec (dossier %s)", cfg.BACKUP_DIR)
+        return False
+    jours = depot.parametre_entier("journal_conservation_jours", 365)
+    if jours > 0:
+        purgees = depot.purger_journal(jours)
+        if purgees:
+            logger.info("Journal : %d entrées de plus de %d jours supprimées", purgees, jours)
+    return True
+
+
 # Découpage du sommeil entre deux cycles. Le collecteur dort jusqu'à quinze minutes ;
 # une demande venue de la console ne doit pas attendre la fin de ce sommeil, sans quoi le
 # bouton ne vaudrait pas mieux que de patienter. Deux secondes de latence au pire, contre
@@ -531,7 +562,7 @@ def main():
     _setup_logging(cfg.LOG_LEVEL)
     logger.info("TinyCMDB %s", version.libelle(court=False))
 
-    if not cfg.BASEROW_VERIFY_TLS or not getattr(cfg, "PROXMOX_VERIFY_TLS", True):
+    if not getattr(cfg, "PROXMOX_VERIFY_TLS", True):
         # Sans ça, urllib3 écrit un avertissement PAR REQUÊTE : quelques centaines de
         # lignes par passe, qui noient les seuls messages qui comptent. Le journal
         # devient illisible, donc inutile, donc jamais lu le jour où il dit quelque
@@ -540,7 +571,9 @@ def main():
         import urllib3
 
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    client = BaserowClient(cfg.BASEROW_URL, cfg.BASEROW_TOKEN, cfg.BASEROW_VERIFY_TLS)
+    depot = Depot(cfg.DB_PATH)
+    client = Stockage(depot)
+    logger.info("Base : %s", cfg.DB_PATH)
 
     last_node_pass = 0.0
     last_cup_pass = 0.0
@@ -626,6 +659,10 @@ def main():
             passes["trivy"] = time.time()
             last_trivy_pass = cycle_start
             etat(en_cours="vulnérabilités des images", note="analyse terminée")
+
+        if run_sauvegarde(depot, cfg):
+            passes["sauvegarde"] = time.time()
+            etat(note="base sauvegardée")
 
         if cfg.RUN_ONCE:
             logger.info("RUN_ONCE=true : une seule passe effectuée, sortie")

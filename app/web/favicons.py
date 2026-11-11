@@ -6,8 +6,8 @@ href="/assets/logo-a1b2.png">` — avec un chemin versionné qu'aucune conventio
 de deviner. C'est pour ça que le navigateur affiche une icône dans son onglet là où la
 console n'en trouvait pas : lui lit la page, pas seulement la racine.
 
-Compromis assumé sur le périmètre réseau. La console ne parlait qu'à Baserow ; elle
-récupère désormais aussi le HTML des applications listées dans la table Application. La
+Compromis assumé sur le périmètre réseau. La console ne parle qu'à sa base ; elle
+récupère en plus le HTML des applications listées dans la table Application. La
 concession reste bornée :
 
 - seules sont interrogées les URL saisies à la main dans `Application.URL` — jamais une
@@ -20,6 +20,7 @@ concession reste bornée :
 
 import logging
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin, urlsplit
@@ -54,6 +55,14 @@ class FaviconResolver:
     Le cache est volontairement long : une icône ne change pas d'un jour à l'autre, et une
     application éteinte ne doit pas faire payer son délai d'attente à chaque rechargement
     de l'instantané.
+
+    La découverte tourne **en tâche de fond**, jamais pendant une requête. C'était la
+    cause de la page lente « après une longue période sans utilisation » : passé les
+    vingt-quatre heures du cache, la première page ouverte attendait la page d'accueil de
+    chaque application — quatre secondes pour chacune de celles qui étaient éteintes.
+    Désormais la page s'affiche avec ce qui est connu (au pire, l'emplacement
+    conventionnel `/favicon.ico`, que le navigateur essaie lui-même), et l'icône
+    découverte apparaît au rechargement suivant.
     """
 
     def __init__(self, enabled=True, timeout=4, workers=8, ttl=86400, verify_tls=False):
@@ -63,10 +72,17 @@ class FaviconResolver:
         self.ttl = ttl
         self.verify_tls = verify_tls
         self._cache = {}  # origine -> (url_icone | None, horodatage)
+        self._verrou = threading.Lock()
+        self._en_cours = set()
+        # Incrémenté à chaque découverte terminée : le store s'en sert pour savoir qu'il
+        # doit reposer les icônes sur l'instantané qu'il sert déjà.
+        self.generation = 0
 
     def apply(self, apps):
-        """Pose `app.favicon` sur chaque application. Sans découverte, chacune garde le
-        `/favicon.ico` de son origine, déjà calculé par le store."""
+        """Pose `app.favicon` sur chaque application à partir du cache, sans attendre ; les
+        origines inconnues ou périmées partent en découverte en arrière-plan. Sans
+        découverte, chacune garde le `/favicon.ico` de son origine, déjà calculé par le
+        store."""
         if not self.enabled:
             return
         origins = {}
@@ -75,15 +91,12 @@ class FaviconResolver:
             if origin:
                 origins.setdefault(origin, []).append(app)
 
-        a_chercher = [o for o in origins if not self._frais(o)]
+        with self._verrou:
+            a_chercher = [o for o in origins if not self._frais(o) and o not in self._en_cours]
+            self._en_cours.update(a_chercher)
         if a_chercher:
-            started = time.time()
-            with ThreadPoolExecutor(max_workers=self.workers) as pool:
-                for origin, icone in zip(a_chercher, pool.map(self._decouvrir, a_chercher)):
-                    self._cache[origin] = (icone, time.time())
-            trouvees = sum(1 for o in a_chercher if self._cache[o][0])
-            logger.info("Icônes : %d origines interrogées en %.1fs, %d trouvées",
-                        len(a_chercher), time.time() - started, trouvees)
+            threading.Thread(target=self._decouvrir_lot, args=(a_chercher,),
+                             name="favicons", daemon=True).start()
 
         for origin, membres in origins.items():
             icone = self._cache.get(origin, (None, 0))[0]
@@ -94,6 +107,20 @@ class FaviconResolver:
                     app.favicon_candidats = [icone] + [c for c in app.favicon_candidats
                                                        if c != icone]
                     app.favicon = icone
+
+    def _decouvrir_lot(self, origines):
+        started = time.time()
+        try:
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
+                for origin, icone in zip(origines, pool.map(self._decouvrir, origines)):
+                    self._cache[origin] = (icone, time.time())
+        finally:
+            with self._verrou:
+                self._en_cours.difference_update(origines)
+                self.generation += 1
+        trouvees = sum(1 for o in origines if self._cache.get(o, (None,))[0])
+        logger.info("Icônes : %d origines interrogées en %.1fs, %d trouvées",
+                    len(origines), time.time() - started, trouvees)
 
     def _frais(self, origin):
         entree = self._cache.get(origin)

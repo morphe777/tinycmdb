@@ -2,7 +2,7 @@
 
 Interroge un docker-socket-proxy en lecture seule (jamais le socket Docker en
 direct : c'est équivalent à root). Renvoie des dicts normalisés, un par
-conteneur. Aucun appel Baserow ici.
+conteneur. Aucun accès à la base ici.
 
 `Application` n'est plus alimentée par cette source (choix explicite : un projet
 Docker Compose est un fait technique sur le conteneur, pas la même chose qu'une

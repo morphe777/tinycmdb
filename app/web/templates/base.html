@@ -52,6 +52,7 @@
     <a href="/applications" class="{{ 'actif' if request.url.path.startswith('/application') }}">Applications</a>
     <a href="/ipam" class="{{ 'actif' if request.url.path.startswith(('/ipam', '/vlan', '/ip/')) }}">IPAM</a>
     <a href="/etat" class="{{ 'actif' if request.url.path.startswith('/etat') }}">État</a>
+    <a href="/admin" class="{{ 'actif' if request.url.path.startswith('/admin') }}">Administration</a>
   </nav>
   <form class="recherche" action="/recherche" method="get" role="search">
     <input type="search" name="q" value="{{ q|default('') }}" placeholder="IP, MAC, hôte, conteneur, image…"
@@ -79,7 +80,6 @@
     {{ snap.nodes|length }} nœuds · {{ snap.containers|length }} conteneurs ·
     {{ snap.stacks|length }} stacks · {{ snap.images|length }} images ·
     {{ snap.ips|length }} adresses · {{ snap.apps|length }} applications</span>
-  <form method="post" action="/rafraichir"><button type="submit">Recharger depuis Baserow</button></form>
   <span class="pied-version" title="Version de l'image en cours d'exécution">{{ version }}</span>
 </footer>
 

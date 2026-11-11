@@ -1,0 +1,86 @@
+{% extends "admin/cadre.html" %}
+{% block titre %}Import / export — Administration{% endblock %}
+{% block titre_admin %}Import / export{% endblock %}
+
+{% block admin %}
+<section class="bloc">
+  <h2>Exporter</h2>
+  <p class="intro">Une table entière en CSV (séparateur point-virgule, UTF-8), qu'un tableur
+    ouvre directement. Les listes multiples et les liens sont joints par « | » ; un lien
+    s'écrit par le nom de la ligne visée.</p>
+  <div class="tbl-scroll"><table class="tbl">
+    <thead><tr><th>Table</th><th class="num">Lignes</th><th>Clé</th><th>Import</th><th></th></tr></thead>
+    <tbody>
+    {% for t in tables %}
+    <tr>
+      <td>{{ t.libelle }}</td>
+      <td class="num">{{ t.nombre }}</td>
+      <td><code>{{ t.cle }}</code></td>
+      <td>{{ 'modification et création' if t.creation else 'modification seulement' }}</td>
+      <td><a class="bouton bouton-mini" href="/admin/export/{{ t.prefixe }}.csv" download>Télécharger le CSV</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="bloc">
+  <h2>Importer
+    {% call m.aide("Import CSV") %}
+      <p>Coller un CSV dont la première ligne nomme les colonnes, avec les noms de champ
+        exacts — ceux de l'export. Une colonne <code>id</code> désigne la ligne à
+        modifier ; sans elle, la clé naturelle (Name, Address…) la retrouve. Une ligne
+        inconnue est créée, si la table le permet.</p>
+      <p>Les mêmes règles que les formulaires s'appliquent : seuls les champs manuels
+        sont écrits, les options doivent exister, les liens doivent désigner une ligne
+        existante. Les colonnes absentes ne sont pas touchées ; une cellule vide efface
+        la valeur.</p>
+      <p>Le plus simple : exporter, corriger dans le tableur, recoller. Les colonnes
+        automatiques du fichier sont ignorées sans erreur.</p>
+    {% endcall %}
+  </h2>
+  <form method="post" action="/admin/import" class="edition">
+    <div class="champ">
+      <label for="i-table">Table</label>
+      <select id="i-table" name="table">
+        {% for t in tables %}<option value="{{ t.kind }}" {{ 'selected' if t.kind == table_import }}>{{ t.libelle }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="champ champ-large">
+      <label for="i-csv">CSV</label>
+      <textarea id="i-csv" name="csv" rows="12" spellcheck="false" class="mono"
+                placeholder="id;Name;Criticality;notes">{{ texte }}</textarea>
+    </div>
+    <div class="barre-form">
+      <button type="submit" class="bouton">Aperçu</button>
+      {% if rapport and not applique and (rapport.creations or rapport.modifications) %}
+      <button type="submit" name="confirmer" value="1" class="bouton bouton-primaire">
+        Appliquer {{ rapport.creations + rapport.modifications }} écriture{{ 's' if rapport.creations + rapport.modifications > 1 }}</button>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if rapport %}
+  <p class="bandeau {{ 'bandeau-ok' if applique else '' }}">
+    {{ 'Import appliqué' if applique else 'Aperçu — rien n’est encore écrit' }} :
+    {{ rapport.creations }} création{{ 's' if rapport.creations > 1 }},
+    {{ rapport.modifications }} modification{{ 's' if rapport.modifications > 1 }},
+    {{ rapport.refus }} refus.
+    {% if rapport.colonnes_inconnues %}Colonnes inconnues, ignorées : {{ rapport.colonnes_inconnues|join(', ') }}.{% endif %}
+  </p>
+  <div class="tbl-scroll"><table class="tbl">
+    <thead><tr><th class="num">Ligne</th><th>Objet</th><th>Résultat</th><th>Détail</th></tr></thead>
+    <tbody>
+    {% for e in rapport.lignes %}
+    <tr class="{{ 'ligne-crit' if e.action == 'refus' }}">
+      <td class="num">{{ e.ligne }}</td>
+      <td>{% if e.obj %}<a href="{{ e.obj.url }}">{{ e.obj.name }}</a>{% else %}{{ e.nom or '' }}{% endif %}</td>
+      <td>{{ e.action }}</td>
+      <td>{% for d in e.details %}<div>{{ d }}</div>{% endfor %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</section>
+{% endblock %}

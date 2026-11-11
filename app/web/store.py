@@ -1,15 +1,15 @@
 """Instantané complet de la CMDB en mémoire, et le graphe qui va avec.
 
-Baserow ne sait pas faire de jointure : chaque table se lit séparément, et les liens
-reviennent sous forme `[{"id": 12, "value": "mytools"}]`. Plutôt que de multiplier les
-requêtes par écran, on tire les six tables d'un coup et on reconstruit le graphe ici,
-une fois, pour tout le monde.
+Les six tables sont lues d'un coup depuis SQLite (`cmdb.depot`), dans la forme héritée de
+Baserow — les liens reviennent sous forme `[{"id": 12, "value": "mytools"}]` — et le
+graphe est reconstruit ici, une fois, pour tout le monde. Plutôt que d'écrire une requête
+par écran, chaque écran lit le même graphe : il tient en mémoire sans effort.
 
 C'est possible parce que le parc tient dans quelques centaines de lignes — et ce plafond
 n'est pas une limite subie, c'est l'objectif du projet : avoir ce qu'il faut et pas plus.
 Si cet instantané devenait lourd, ce serait le symptôme à traiter, pas le code.
 
-Rien n'est écrit depuis ce module : il ne connaît que `fetch_all`.
+Rien n'est écrit depuis ce module : il ne connaît que `lire_tout`.
 """
 
 import ipaddress
@@ -19,7 +19,8 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import quote, urlsplit
 
-from collector.baserow import BaserowClient
+from cmdb import sauvegarde
+from cmdb.depot import Depot
 
 from . import schema
 from .favicons import FaviconResolver
@@ -27,8 +28,8 @@ from .favicons import FaviconResolver
 logger = logging.getLogger("cmdb.web.store")
 
 
-class BaserowIndisponible(Exception):
-    """Aucun instantané disponible : Baserow est injoignable et rien n'a pu être chargé.
+class BaseIndisponible(Exception):
+    """Aucun instantané disponible : la base est illisible et rien n'a pu être chargé.
 
     Distincte d'un rechargement en échec : tant qu'un instantané existe, même daté, la
     console continue de servir et affiche son âge. Ce n'est qu'au démarrage à froid, sans
@@ -65,10 +66,10 @@ DOMAINS = [
 ]
 
 
-# Teintes des listes déroulantes. Baserow nomme ses couleurs ("blue", "dark-red",
-# "light-green"…) ; on n'en retient que la famille, et une seule valeur par famille, choisie
-# assez médiane pour rester lisible sur fond clair comme sur fond sombre. La déclinaison
-# claire/foncée de Baserow est ignorée : à l'échelle d'une étiquette de douze pixels, elle
+# Teintes des listes déroulantes. Les couleurs sont nommées ("blue", "dark-red",
+# "light-green"… — la convention de Baserow, reprise telle quelle) ; on n'en retient que la
+# famille, et une seule valeur par famille, choisie assez médiane pour rester lisible sur
+# fond clair comme sur fond sombre. La déclinaison claire/foncée est ignorée : à l'échelle d'une étiquette de douze pixels, elle
 # ne distingue rien et casse le contraste d'un des deux thèmes.
 _TEINTES = {
     "blue": "#4a8fe0", "cyan": "#3aa5a5", "green": "#2f9e68", "yellow": "#c9a227",
@@ -103,8 +104,8 @@ def _links(row, field):
 
 
 def _num(row, field):
-    """Baserow renvoie ses champs numériques en chaînes ("0", "63"). Les trier tels quels
-    donnerait un ordre alphabétique — 9 après 63."""
+    """Un nombre, qu'il arrive en entier ou en chaîne ("0", "63") — comme le rendait
+    Baserow. Trier des chaînes donnerait un ordre alphabétique — 9 après 63."""
     value = row.get(field)
     if value in (None, ""):
         return None
@@ -134,9 +135,9 @@ def _dt(row, field):
 # --------------------------------------------------------------------------- objets
 
 class Obj:
-    """Une ligne Baserow plus ses relations résolues. Volontairement mince : les gabarits
-    lisent les champs par leur nom Baserow exact, ce qui évite une couche de renommage à
-    maintenir en parallèle des renommages faits dans Baserow."""
+    """Une ligne plus ses relations résolues. Volontairement mince : les gabarits lisent
+    les champs par leur nom exact (cmdb/modele.py), ce qui évite une couche de renommage à
+    maintenir en parallèle."""
 
     def __init__(self, kind, row, name_field):
         self.kind = kind
@@ -156,12 +157,12 @@ class Obj:
         return _multi(self.row, field)
 
     def sel_couleur(self, field):
-        """Couleur choisie dans Baserow pour cette option, traduite en teinte affichable."""
+        """Couleur choisie pour cette option, traduite en teinte affichable."""
         value = self.row.get(field)
         return _teinte(value.get("color")) if isinstance(value, dict) else None
 
     def multi_colore(self, field):
-        """Options multiples avec leur teinte Baserow : [(libellé, teinte), ...]."""
+        """Options multiples avec leur teinte : [(libellé, teinte), ...]."""
         return [(v.get("value"), _teinte(v.get("color")))
                 for v in (self.row.get(field) or []) if isinstance(v, dict)]
 
@@ -243,9 +244,15 @@ class Stack:
 # --------------------------------------------------------------------------- instantané
 
 class Snapshot:
-    def __init__(self, cfg, rows_by_kind, fetched_at):
+    def __init__(self, cfg, rows_by_kind, fetched_at, options=None, perso=None,
+                 parametres=None):
         self.cfg = cfg
         self.fetched_at = fetched_at
+        # Définition des listes, {(table, champ): [option, ...]} dans l'ordre réglé dans
+        # l'administration ; et champs personnalisés, {table: [champ, ...]}.
+        self.options = options or {}
+        self.perso = perso or {}
+        self.parametres = parametres or {}
 
         self.nodes = [Obj("node", r, "Name") for r in rows_by_kind["node"]]
         self.containers = [Obj("container", r, "Name") for r in rows_by_kind["container"]]
@@ -694,18 +701,41 @@ class Snapshot:
         })
 
         composants.append({
-            "cle": "baserow", "label": "Baserow",
+            "cle": "base", "label": "Base SQLite",
             "verdict": "warn" if erreur_rechargement else "ok",
-            "valeur": "injoignable" if erreur_rechargement else "disponible",
-            "depuis": self.fetched_at and _depuis((now - self.fetched_at).total_seconds() / 3600.0),
-            "probleme": f"dernier rechargement en échec : {erreur_rechargement}"
+            "valeur": "illisible" if erreur_rechargement else "disponible",
+            "depuis": self.fetched_at and f"relue {_depuis((now - self.fetched_at).total_seconds() / 3600.0)}",
+            "probleme": f"dernière lecture en échec : {erreur_rechargement}"
                         if erreur_rechargement else None,
+        })
+
+        # -- Sauvegarde : l'âge de la copie la plus récente, rapporté à l'intervalle réglé.
+        intervalle = int(self.parametres.get("sauvegarde_intervalle_heures") or 24)
+        copie = sauvegarde.derniere(self.cfg.BACKUP_DIR)
+        age_copie = (now - copie["date"]).total_seconds() / 3600.0 if copie else None
+        if intervalle <= 0:
+            verdict_copie, probleme_copie = "warn", "sauvegardes désactivées dans l'administration"
+        elif copie is None:
+            verdict_copie, probleme_copie = "ko", (f"aucune copie dans {self.cfg.BACKUP_DIR} : "
+                                                   "le collecteur tourne-t-il, et le dossier "
+                                                   "appartient-il à l'UID 1000 ?")
+        elif age_copie > 2 * intervalle:
+            verdict_copie, probleme_copie = "warn", (f"dernière copie il y a {_depuis(age_copie)}, "
+                                                     f"pour une copie toutes les {intervalle} h")
+        else:
+            verdict_copie, probleme_copie = "ok", None
+        composants.append({
+            "cle": "sauvegarde", "label": "Sauvegarde",
+            "verdict": verdict_copie,
+            "valeur": copie["nom"] if copie else "aucune",
+            "depuis": _depuis(age_copie) if copie else None,
+            "probleme": probleme_copie,
         })
 
         composants.append({
             "cle": "console", "label": "Console web",
             "verdict": "ok", "valeur": "en ligne",
-            "depuis": f"cache {self.cfg.CACHE_TTL} s", "probleme": None,
+            "depuis": "relit la base à chaque écriture", "probleme": None,
         })
 
         # -- Socket-proxies : un par hôte Docker inventorié.
@@ -985,56 +1015,71 @@ def vlan_grid(vlan):
 # --------------------------------------------------------------------------- cache
 
 class Store:
-    """Un instantané partagé, rafraîchi au plus toutes les `CACHE_TTL` secondes.
+    """Un instantané partagé, reconstruit dès que la base a changé — et seulement alors.
 
-    Un verrou suffit : les six requêtes prennent une seconde, et deux navigateurs qui
-    rafraîchissent en même temps doivent attendre le même tirage plutôt qu'en lancer deux.
+    Il n'y a plus de durée de vie : `PRAGMA data_version` dit, pour le prix d'une requête
+    de quelques microsecondes, si quelqu'un a écrit depuis la dernière lecture — le
+    collecteur, un autre thread de la console, l'API. Tant que rien n'a bougé, toutes les
+    pages servent le même graphe ; dès que quelque chose a bougé, la page suivante le voit.
+
+    Un verrou suffit : la relecture complète prend quelques dizaines de millisecondes, et
+    deux requêtes simultanées doivent attendre la même plutôt qu'en lancer deux.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, depot=None):
         self.cfg = cfg
-        self.client = BaserowClient(cfg.BASEROW_URL, cfg.BASEROW_TOKEN,
-                                    verify_tls=cfg.BASEROW_VERIFY_TLS, timeout=30)
-        self.favicons = FaviconResolver(enabled=cfg.FAVICON_DISCOVERY,
-                                        verify_tls=cfg.BASEROW_VERIFY_TLS)
+        self.depot = depot or Depot(cfg.DB_PATH, paresseux=True)
+        self.favicons = FaviconResolver(enabled=cfg.FAVICON_DISCOVERY)
         self._lock = threading.Lock()
         self._snapshot = None
+        self._version = None
+        self._generation_icones = -1
         self._loaded_at = 0.0
         self.derniere_erreur = None
 
     def get(self, force=False):
         with self._lock:
-            fresh = self._snapshot is not None and (time.time() - self._loaded_at) < self.cfg.CACHE_TTL
-            if fresh and not force:
+            try:
+                version = self.depot.version_donnees()
+            except Exception:
+                version = None
+            if self._snapshot is not None and not force and version is not None \
+                    and version == self._version:
+                if self.favicons.generation != self._generation_icones:
+                    self._poser_icones(self._snapshot)
                 return self._snapshot
             try:
                 self._snapshot = self._load()
+                self._version = version
                 self._loaded_at = time.time()
                 self.derniere_erreur = None
             except Exception as exc:
                 if self._snapshot is None:
                     # Aucun instantané, même périmé : il n'y a rien à montrer. Cette
-                    # exception dédiée permet d'afficher une page d'indisponibilité qui
-                    # désigne la vraie cause — Baserow — plutôt qu'une trace d'erreur qui
-                    # ferait chercher le défaut dans la console.
-                    raise BaserowIndisponible(str(exc)) from exc
-                # Baserow indisponible : mieux vaut un instantané daté, clairement
-                # horodaté à l'écran, qu'une page d'erreur.
+                    # exception dédiée permet d'afficher une page qui désigne la vraie
+                    # cause — la base — plutôt qu'une trace d'erreur.
+                    raise BaseIndisponible(str(exc)) from exc
                 self.derniere_erreur = str(exc) or exc.__class__.__name__
-                logger.exception("Rechargement impossible, instantané précédent conservé")
+                logger.exception("Relecture impossible, instantané précédent conservé")
             return self._snapshot
+
+    def _poser_icones(self, snapshot):
+        self._generation_icones = self.favicons.generation
+        self.favicons.apply(snapshot.apps)
 
     def _load(self):
         started = time.time()
-        rows = {kind: self.client.fetch_all(table_id) for kind, table_id in self.cfg.TABLES.items()}
-        snapshot = Snapshot(self.cfg, rows, datetime.now(timezone.utc))
-        # Après coup, et sans bloquer la construction du graphe : une application éteinte
-        # ne doit pas retarder l'affichage de tout le reste.
-        self.favicons.apply(snapshot.apps)
-        logger.info("Instantané rechargé en %.2fs : %s",
-                    time.time() - started,
-                    ", ".join(f"{len(v)} {k}" for k, v in rows.items())
-                    + f", {len(snapshot.stacks)} stacks")
+        rows, options, perso = self.depot.lire_tout()
+        parametres = {r["cle"]: r["valeur"] for r in
+                      self.depot.conn.execute("SELECT cle, valeur FROM parametre")}
+        snapshot = Snapshot(self.cfg, rows, datetime.now(timezone.utc),
+                            options=options, perso=perso, parametres=parametres)
+        # Depuis le cache seulement : une découverte en cours se poursuit en arrière-plan,
+        # une application éteinte ne retarde rien.
+        self._poser_icones(snapshot)
+        logger.debug("Instantané relu en %.3fs : %s", time.time() - started,
+                     ", ".join(f"{len(v)} {k}" for k, v in rows.items())
+                     + f", {len(snapshot.stacks)} stacks")
         return snapshot
 
     @property
