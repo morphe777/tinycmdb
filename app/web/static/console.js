@@ -240,3 +240,27 @@
     }
   });
 })();
+
+// ---------------------------------------------------------------- aperçu d'une option
+// Administration -> Listes : l'étiquette suit le libellé et la couleur pendant la saisie,
+// avant tout enregistrement. Elle montre ce que l'option donnera partout dans la console.
+// Sans script, elle reste celle de la valeur enregistrée.
+(function () {
+  function rafraichir(zone) {
+    var texte = zone.querySelector("[data-apercu-texte]");
+    var choix = zone.querySelector("[data-apercu-couleur]");
+    var badge = zone.querySelector("[data-apercu-badge] .badge");
+    if (!texte || !choix || !badge) { return; }
+    badge.textContent = texte.value.trim() || texte.placeholder || "";
+    var option = choix.options[choix.selectedIndex];
+    var teinte = option ? option.getAttribute("data-teinte") : "";
+    badge.classList.toggle("badge-teinte", !!teinte);
+    badge.classList.toggle("badge-neutre", !teinte);
+    if (teinte) { badge.style.setProperty("--teinte", teinte); }
+    else { badge.style.removeProperty("--teinte"); }
+  }
+  document.querySelectorAll("[data-apercu]").forEach(function (zone) {
+    zone.addEventListener("input", function () { rafraichir(zone); });
+    zone.addEventListener("change", function () { rafraichir(zone); });
+  });
+})();

@@ -1159,37 +1159,123 @@ a.case-libre:hover {
 .admin-carte-alerte { border-color: var(--crit); }
 .admin-carte-alerte span { color: var(--crit); }
 
-.bouton-mini { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; }
 .bouton[disabled] { opacity: .35; cursor: default; pointer-events: none; }
 .bouton-danger { color: var(--crit); border-color: var(--crit); }
 .bouton-danger:hover { background: var(--crit); color: #fff; border-color: var(--crit); }
 
-/* Formulaire sur une ligne : champs et bouton côte à côte, qui passent à la ligne sur un
-   écran étroit plutôt que de déborder. */
-.ligne-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
-.ligne-form input[type="text"], .ligne-form input[type="number"], .ligne-form select {
-  font: inherit; font-size: 13px; padding: 6px 9px; border-radius: 8px; min-width: 0;
-  border: 1px solid var(--trait-fort); background: var(--surface); color: var(--encre);
+/* Le texte d'explication d'un onglet court sur toute la largeur des cartes qu'il
+   présente : borné à 74 caractères, il s'arrêtait aux deux tiers de la page et laissait
+   un vide à sa droite que les cartes, elles, remplissent. */
+.page-admin .intro, .page-admin .note { max-width: none; }
+.intro-ligne { display: flex; align-items: flex-start; gap: 16px; margin: 0 0 26px; }
+.intro-ligne .intro { margin: 0; flex: 1; }
+.intro-ligne .aide { margin-top: 4px; }
+
+/* Une seule hauteur pour tout ce qui se pose côte à côte sur une ligne : champ, liste,
+   bouton. 34px, celle des champs posés dans une fiche, dont ces lignes sont l'équivalent.
+   Les boutons, eux, tenaient leur hauteur de leur texte, et ne s'alignaient sur rien. */
+.page-admin { --h-ligne: 34px; }
+.ligne-form input[type="text"], .ligne-form input[type="number"], .ligne-form select,
+.tbl-admin input[type="text"], .tbl-admin select {
+  font: inherit; font-size: 13.5px; height: var(--h-ligne); box-sizing: border-box;
+  padding: 0 10px; border-radius: 9px; min-width: 0;
+  border: 1px solid var(--trait-fort); background: var(--fond); color: var(--encre);
 }
+.ligne-form input:focus, .ligne-form select:focus,
+.tbl-admin input:focus, .tbl-admin select:focus {
+  border-color: var(--manuel); outline: 2px solid color-mix(in srgb, var(--manuel) 30%, transparent);
+  outline-offset: 0;
+}
+.ligne-form input[readonly], .tbl-admin input[readonly] { color: var(--encre-3); background: var(--surface-2); }
+.ligne-form .bouton, .bouton-ligne {
+  height: var(--h-ligne); box-sizing: border-box; padding: 0 14px;
+  justify-content: center; white-space: nowrap;
+}
+.bouton-carre { width: var(--h-ligne); padding: 0; }
+/* Tient la place du bouton Supprimer sur une option qui ne se supprime pas : la colonne
+   des actions reste alignée, et la raison est dite là où l'on aurait cherché le geste. */
+.bouton-inerte { border-style: dashed; color: var(--encre-3); cursor: default; }
+.bouton-inerte:hover { border-color: var(--trait-fort); color: var(--encre-3); }
+
+.ligne-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
 .ligne-form input[type="text"] { flex: 1 1 160px; max-width: 320px; }
-.ligne-form input[readonly] { color: var(--encre-3); background: var(--surface-2); }
-.ligne-form label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.ligne-form label { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--encre-2); }
 .ligne-form.ajout { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--trait); }
 .filtres { margin-bottom: 18px; }
-.en-ligne { display: inline; margin: 0; }
-.grille-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 18px; }
+
+/* Tableaux de l'administration. Un peu plus d'air entre les colonnes que dans un tableau
+   de lecture : on y lit en colonne, de haut en bas, plus qu'en ligne. Les actions à
+   droite, au ras de la carte : c'est l'aplomb des boutons des formulaires au-dessus. */
+.tbl-admin th, .tbl-admin td { padding-right: 22px; }
+.tbl-admin td { vertical-align: middle; }
+.tbl-admin .actions { text-align: right; padding-right: 0; width: 1%; white-space: nowrap; }
+.actions-ligne { display: flex; justify-content: flex-end; align-items: flex-start; gap: 8px; }
+.actions-ligne form { margin: 0; }
+/* Lignes de saisie (listes, champs) : alignées en haut, pour qu'un panneau de suppression
+   déplié n'entraîne pas le reste de la ligne vers le milieu. Le texte seul y prend la
+   hauteur d'un champ, pour rester à son niveau. */
+.tbl-options td, .tbl-admin td.ordre, .tbl-admin td.col-libelle, .tbl-admin td.col-aide,
+.tbl-admin td.col-couleur, .tbl-admin td.col-usage, .tbl-admin td.col-apercu,
+.tbl-admin td.actions:has(.geste-repli) { vertical-align: top; }
+.tbl-admin td.col-usage, .tbl-admin td.col-apercu { line-height: var(--h-ligne); white-space: nowrap; }
+.tbl-admin td.col-apercu .badge { line-height: 1.55; vertical-align: middle; }
+/* Même largeur pour « Supprimer… » et sa place tenue, « protégée » : sans quoi le bouton
+   Enregistrer qui les précède se décale d'une ligne à l'autre. */
+.actions-ligne .geste-repli > summary, .actions-ligne .bouton-inerte { min-width: 112px; }
+/* Largeurs fixes : chaque liste est un tableau à part, et sans elles les colonnes
+   tombaient à un endroit différent d'une carte à la suivante. Le libellé prend le reste. */
+.tbl-options, .tbl-champs { table-layout: fixed; }
+.tbl-options th:nth-child(1), .tbl-champs th:nth-child(1) { width: 94px; }
+.tbl-options th:nth-child(3) { width: 150px; }
+.tbl-options th:nth-child(4) { width: 160px; }
+.tbl-options th:nth-child(5) { width: 110px; }
+.tbl-champs th:nth-child(4) { width: 210px; }
+.tbl-options th:last-child, .tbl-champs th:last-child { width: 232px; }
+.tbl-options td.col-apercu { overflow: hidden; text-overflow: ellipsis; }
+/* Le panneau de suppression déplié s'étend vers la gauche, sous la ligne, au lieu
+   d'élargir la colonne : Enregistrer reste où il était. */
+.actions-ligne .geste-repli { width: 112px; flex: none; }
+.actions-ligne .geste-panneau { width: 360px; margin-left: -248px; box-sizing: border-box; }
+.tbl-admin .col-libelle input, .tbl-admin .col-aide input { width: 100%; }
+.tbl-admin .col-couleur select { width: 100%; }
+.tbl-jetons td:first-child { font-weight: 550; }
 
 .tbl td.ordre form { display: flex; gap: 4px; margin: 0; }
 .tbl td.ordre { width: 1%; white-space: nowrap; }
 .tbl .ligne-revoquee td { color: var(--encre-3); }
-.journal-valeur { max-width: 280px; overflow-wrap: anywhere; font-size: 12.5px; }
-.journal-valeur code { white-space: pre-wrap; font-size: 11.5px; }
-.mono, textarea.mono { font-family: var(--mono); font-size: 12.5px; }
+.journal-valeur { max-width: 280px; overflow-wrap: anywhere; }
+.journal-valeur code { white-space: pre-wrap; }
+/* Chasse fixe à la taille du texte qui l'entoure, à un cheveu près : réduite d'un point
+   de plus, elle faisait paraître tout le tableau plus petit que ceux du reste de la
+   console. */
+.mono, textarea.mono { font-family: var(--mono); font-size: 13px; }
+
+/* Formulaires de création : toute la largeur de la carte, le champ qui porte un texte
+   libre plus large que ceux qui portent un choix. */
+.edition.form-jeton { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.edition.form-champ { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); }
+/* Intitulés d'une ou deux lignes selon la largeur : les champs s'alignent sur leur bas,
+   pas sur le haut de leur intitulé. */
+.edition.form-reglages { align-items: end; }
+@media (max-width: 620px) {
+  .edition.form-jeton, .edition.form-champ { grid-template-columns: 1fr; }
+}
+
+/* Deux cartes côte à côte, de même hauteur, leurs boutons sur une même ligne. */
+.paire { align-items: stretch; }
+.paire > .bloc { display: flex; flex-direction: column; }
+.paire > .bloc > form:last-child { margin-top: auto; }
+.paire > .bloc > form.edition { flex: 1; align-content: space-between; margin-top: 0; }
 
 .geste-repli { display: inline-block; }
 .geste-repli > summary { list-style: none; }
 .geste-repli > summary::-webkit-details-marker { display: none; }
 .geste-repli[open] > summary { margin-bottom: 8px; }
+.geste-repli { text-align: right; }
+.geste-panneau {
+  justify-content: flex-end; padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--trait); text-align: left;
+}
 
 /* Gestes sur une ligne entière, au bas d'une fiche : repliés, parce que rares. */
 .gestes > summary { cursor: pointer; color: var(--encre-2); font-size: 13.5px; }
@@ -1204,3 +1290,9 @@ a.case-libre:hover {
   overflow-x: auto; font-size: 13px; user-select: all;
 }
 .bloc-secret pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Journal : la date et l'auteur sur une ligne. Coupés en deux, ils doublaient la hauteur
+   de chaque entrée pour quelques pixels gagnés sur les colonnes de valeurs. */
+.tbl-journal td:nth-child(1), .tbl-journal td:nth-child(2) { white-space: nowrap; }
+.tbl-jetons td { white-space: nowrap; }
+.filtres input[type="text"] { flex-basis: 300px; max-width: 360px; }

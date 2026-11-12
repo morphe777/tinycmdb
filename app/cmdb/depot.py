@@ -780,7 +780,7 @@ class Depot:
             conn.execute("DELETE FROM option WHERE tab = ? AND champ = ?", (p["tab"], p["nom"]))
             conn.execute("DELETE FROM champ_perso WHERE id = ?", (ident,))
             self._journaliser(conn, acteur, "champ supprimé", p["tab"], None, p["nom"], p["nom"],
-                              f"{n} valeurs", None)
+                              f"{n} valeur{'s' if n > 1 else ''}", None)
             return n
 
     # ------------------------------------------------------------------ jetons

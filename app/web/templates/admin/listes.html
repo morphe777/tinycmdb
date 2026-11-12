@@ -2,27 +2,46 @@
 {% block titre %}Listes — Administration{% endblock %}
 {% block titre_admin %}Listes{% endblock %}
 
-{% set tables = {'node': 'Nœuds', 'container': 'Conteneurs', 'image': 'Images',
-                 'ipam': 'Adresses IP', 'vlan': 'VLAN', 'application': 'Applications'} %}
-
 {% block admin %}
-<p class="intro">Les options proposées dans les listes déroulantes, table par table. L'ordre
-  ici est celui des formulaires ; la couleur est celle des étiquettes dans toute la console.
+{#
+  Un formulaire par ligne, dont les champs sont répartis dans les colonnes du tableau par
+  l'attribut `form` : un <form> ne peut pas enjamber des cellules, et sans colonnes les
+  libellés, les couleurs et les boutons ne s'alignent pas d'une ligne à l'autre.
+#}
+{% macro choix_couleur(courante, formulaire=None) -%}
+<select name="couleur" aria-label="Couleur" data-apercu-couleur{% if formulaire %} form="{{ formulaire }}"{% endif %}>
+  {% for c, teinte in couleurs %}
+  <option value="{{ c }}" data-teinte="{{ teinte or '' }}" {{ 'selected' if courante == c }}>{{ c }}</option>
+  {% endfor %}
+  {# Une couleur reprise de Baserow peut être une déclinaison (« light-blue ») : elle
+     reste proposée telle quelle, à côté des familles. #}
+  {% if courante not in couleurs|map('first')|list %}
+  <option value="{{ courante }}" data-teinte="{{ store_teinte(courante) or '' }}" selected>{{ courante }}</option>
+  {% endif %}
+</select>
+{%- endmacro %}
+
+<div class="intro-ligne">
+  <p class="intro">Les options proposées dans les listes déroulantes, table par table. L'ordre
+    ici est celui des formulaires, la couleur est celle des étiquettes dans toute la console.
+    L'aperçu suit la saisie, rien n'est écrit avant « Enregistrer ».</p>
   {% call m.aide("Options protégées") %}
-    <p>Certaines options sont lues par le code de la CMDB — <code>Source</code> Auto et
-      Manual, les types VM et LXC, les états écrits par le collecteur. Leur couleur se
-      change ; leur libellé, non, et elles ne se suppriment pas : la règle qui en dépend
-      cesserait de fonctionner sans le dire.</p>
-    <p>Supprimer une option employée demande de choisir celle qui la remplace sur les
-      lignes concernées ; sans remplacement, ces lignes perdent la valeur.</p>
+    <p>Certaines options sont lues par le code de la CMDB :</p>
+    <p><b>Source</b> Auto et Manual, les <b>types</b> VM et LXC, les <b>états</b> écrits par
+      le collecteur.</p>
+    <p>Leur couleur se change. Leur libellé, non, et elles ne se suppriment pas : la règle
+      qui en dépend cesserait de fonctionner sans le dire.</p>
+    <p><b>Supprimer une option employée</b><br>Il faut choisir celle qui la remplace sur les
+      lignes concernées. Sans remplacement, ces lignes perdent la valeur.</p>
   {% endcall %}
-</p>
+</div>
 
 <nav class="onglets onglets-secondaires" aria-label="Table">
-  {% for k, libelle in tables.items() %}
+  {% for k, libelle in tables %}
   <a href="/admin/listes?table={{ k }}" class="{{ 'actif' if k == table }}">{{ libelle }}</a>
   {% endfor %}
 </nav>
+
 
 {% for g in groupes %}
 <section class="bloc">
@@ -30,54 +49,52 @@
     <span class="compte">{{ 'plusieurs choix' if g.type == 'multi' else 'un choix' }}{{ ' · champ personnalisé' if g.perso }}</span>
   </h2>
   {% if g.options %}
-  <div class="tbl-scroll"><table class="tbl tbl-options">
-    <thead><tr><th>Ordre</th><th>Option</th><th>Couleur</th><th class="num">Lignes</th><th></th></tr></thead>
+  <div class="tbl-scroll"><table class="tbl tbl-admin tbl-options">
+    <thead><tr><th>Ordre</th><th>Libellé</th><th>Couleur</th><th>Aperçu</th><th>Utilisation</th><th class="actions"></th></tr></thead>
     <tbody>
     {% for o in g.options %}
-    <tr>
+    {% set f = 'opt-' ~ o.id %}
+    <tr data-apercu>
       <td class="ordre">
         <form method="post" action="/admin/listes/{{ o.id }}/deplacer">
-          <button class="bouton bouton-mini" name="sens" value="haut" aria-label="Monter" {{ 'disabled' if loop.first }}>↑</button>
-          <button class="bouton bouton-mini" name="sens" value="bas" aria-label="Descendre" {{ 'disabled' if loop.last }}>↓</button>
+          <button class="bouton bouton-ligne bouton-carre" name="sens" value="haut" aria-label="Monter" {{ 'disabled' if loop.first }}>↑</button>
+          <button class="bouton bouton-ligne bouton-carre" name="sens" value="bas" aria-label="Descendre" {{ 'disabled' if loop.last }}>↓</button>
         </form>
       </td>
-      <td colspan="2">
-        <form method="post" action="/admin/listes/{{ o.id }}/modifier" class="ligne-form">
-          <input type="text" name="valeur" value="{{ o.valeur }}" maxlength="80" required
-                 {{ 'readonly title="Option lue par le code : libellé fixe"' if o.protegee }}>
-          {# Une couleur reprise de Baserow peut être une déclinaison (« light-blue ») :
-             elle reste proposée telle quelle, à côté des familles. #}
-          <select name="couleur" aria-label="Couleur">
-            {% for c, teinte in couleurs %}
-            <option value="{{ c }}" {{ 'selected' if o.couleur == c }}>{{ c }}</option>
-            {% endfor %}
-            {% if o.couleur not in couleurs|map('first')|list %}<option value="{{ o.couleur }}" selected>{{ o.couleur }}</option>{% endif %}
-          </select>
-          {{ m.badge_option(o.valeur, o.teinte) }}
-          {% if o.protegee %}<span class="badge badge-neutre" title="lue par le code de la CMDB">protégée</span>{% endif %}
-          <button type="submit" class="bouton bouton-mini">Enregistrer</button>
-        </form>
+      <td class="col-libelle">
+        <input type="text" name="valeur" value="{{ o.valeur }}" maxlength="80" required
+               form="{{ f }}" aria-label="Libellé" class="controle" data-apercu-texte
+               {{ 'readonly title="Option lue par le code : libellé fixe"' if o.protegee }}>
       </td>
-      <td class="num">{{ o.usage }}</td>
-      <td>
-        {% if not o.protegee %}
-        <details class="geste-repli">
-          <summary class="bouton bouton-mini">Supprimer…</summary>
-          <form method="post" action="/admin/listes/{{ o.id }}/supprimer" class="ligne-form">
-            {% if o.usage %}
-            <label>Remplacer sur {{ o.usage }} ligne{{ 's' if o.usage > 1 }} par
-              <select name="remplacement">
-                <option value="">— rien (vider) —</option>
-                {% for autre in g.options if autre.id != o.id %}
-                <option value="{{ autre.id }}">{{ autre.valeur }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            {% endif %}
-            <button type="submit" class="bouton bouton-mini bouton-danger">Supprimer « {{ o.valeur }} »</button>
+      <td class="col-couleur">{{ choix_couleur(o.couleur, f) }}</td>
+      <td class="col-apercu" data-apercu-badge>{{ m.badge_option(o.valeur, o.teinte) }}</td>
+      <td class="col-usage">{% if o.usage %}{{ o.usage }} ligne{{ 's' if o.usage > 1 }}{% else %}<span class="vide">aucune</span>{% endif %}</td>
+      <td class="actions">
+        <div class="actions-ligne">
+          <form method="post" action="/admin/listes/{{ o.id }}/modifier" id="{{ f }}">
+            <button type="submit" class="bouton bouton-ligne">Enregistrer</button>
           </form>
-        </details>
-        {% endif %}
+          {% if o.protegee %}
+          <span class="bouton bouton-ligne bouton-inerte" title="Option lue par le code de la CMDB : elle ne se supprime pas">protégée</span>
+          {% else %}
+          <details class="geste-repli">
+            <summary class="bouton bouton-ligne">Supprimer…</summary>
+            <form method="post" action="/admin/listes/{{ o.id }}/supprimer" class="ligne-form geste-panneau">
+              {% if o.usage %}
+              <label>Remplacer sur {{ o.usage }} ligne{{ 's' if o.usage > 1 }} par
+                <select name="remplacement">
+                  <option value="">rien (vider)</option>
+                  {% for autre in g.options if autre.id != o.id %}
+                  <option value="{{ autre.id }}">{{ autre.valeur }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% endif %}
+              <button type="submit" class="bouton bouton-danger">Supprimer « {{ o.valeur }} »</button>
+            </form>
+          </details>
+          {% endif %}
+        </div>
       </td>
     </tr>
     {% endfor %}
@@ -87,15 +104,14 @@
   <p class="rien">Aucune option : la liste est vide.</p>
   {% endif %}
 
-  <form method="post" action="/admin/listes/ajouter" class="ligne-form ajout">
+  <form method="post" action="/admin/listes/ajouter" class="ligne-form ajout" data-apercu>
     <input type="hidden" name="table" value="{{ g.tab }}">
     <input type="hidden" name="champ" value="{{ g.champ }}">
     <input type="text" name="valeur" placeholder="Nouvelle option" maxlength="80" required
-           aria-label="Libellé de la nouvelle option">
-    <select name="couleur" aria-label="Couleur">
-      {% for c, teinte in couleurs %}<option value="{{ c }}" {{ 'selected' if c == 'gray' }}>{{ c }}</option>{% endfor %}
-    </select>
-    <button type="submit" class="bouton bouton-primaire bouton-mini">Ajouter</button>
+           aria-label="Libellé de la nouvelle option" data-apercu-texte>
+    {{ choix_couleur('gray') }}
+    <span data-apercu-badge>{{ m.badge_option('Nouvelle option', store_teinte('gray')) }}</span>
+    <button type="submit" class="bouton bouton-primaire">Ajouter</button>
   </form>
 </section>
 {% else %}

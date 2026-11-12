@@ -6,10 +6,10 @@
                  'ipam': 'Adresses IP', 'vlan': 'VLAN', 'application': 'Applications'} %}
 
 {% block admin %}
-<p class="intro">Chaque écriture de l'interface, de l'API et du serveur MCP, champ par champ ;
-  les créations et suppressions du collecteur ; les changements de listes, de champs, de
-  jetons et de réglages. Une suppression garde le contenu entier de la ligne.
-  Les mises à jour de routine du collecteur n'y figurent pas.</p>
+<p class="intro">Chaque écriture de l'interface, de l'API et du serveur MCP, champ par champ.
+  Les créations et suppressions du collecteur. Les changements de listes, de champs, de
+  jetons et de réglages. Une suppression garde le contenu entier de la ligne, les mises à
+  jour de routine du collecteur n'y figurent pas.</p>
 
 <form method="get" action="/admin/journal" class="ligne-form filtres">
   <label>Table
@@ -19,8 +19,8 @@
   </label>
   <label>Auteur <input type="text" name="acteur" value="{{ acteur }}" placeholder="interface, api:…, mcp:…, collecteur"></label>
   {% if ident %}<input type="hidden" name="id" value="{{ ident }}">{% endif %}
-  <button type="submit" class="bouton bouton-mini">Filtrer</button>
-  {% if table or acteur or ident %}<a class="bouton bouton-mini" href="/admin/journal">Tout</a>{% endif %}
+  <button type="submit" class="bouton bouton-primaire">Filtrer</button>
+  {% if table or acteur or ident %}<a class="bouton" href="/admin/journal">Tout afficher</a>{% endif %}
 </form>
 
 {% if entrees %}

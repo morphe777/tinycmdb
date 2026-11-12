@@ -5,7 +5,7 @@
 {% block admin %}
 <p class="intro">Un jeton par application ou par agent : il se révoque seul, sans toucher
   aux autres, et le journal attribue chaque écriture à son nom. Un jeton <b>lecture</b>
-  consulte ; un jeton <b>écriture</b> modifie en plus les champs manuels et crée des lignes,
+  consulte. Un jeton <b>écriture</b> modifie en plus les champs manuels et crée des lignes,
   aux mêmes règles que les formulaires. Aucun ne supprime.</p>
 
 {% if nouveau %}
@@ -18,7 +18,7 @@
     <summary>Exemples d'utilisation</summary>
     <p>API :</p>
     <pre class="mono"><code>curl -H "Authorization: Bearer {{ nouveau.secret }}" {{ base_url }}/api/v1/</code></pre>
-    <p>Serveur MCP (transport HTTP) — par exemple pour Claude Code :</p>
+    <p>Serveur MCP (transport HTTP), par exemple pour Claude Code :</p>
     <pre class="mono"><code>claude mcp add --transport http tinycmdb {{ base_url }}/mcp \
   --header "Authorization: Bearer {{ nouveau.secret }}"</code></pre>
   </details>
@@ -27,7 +27,7 @@
 
 <section class="bloc">
   <h2>Nouveau jeton</h2>
-  <form method="post" action="/admin/jetons/creer" class="edition grille-form">
+  <form method="post" action="/admin/jetons/creer" class="edition form-jeton">
     <div class="champ">
       <label for="j-nom">Nom</label>
       <input id="j-nom" type="text" name="nom" maxlength="80" required placeholder="agent-ops, updater, homepage…">
@@ -50,8 +50,8 @@
 <section class="bloc">
   <h2>Jetons <span class="compte">{{ jetons|length }}</span></h2>
   {% if jetons %}
-  <div class="tbl-scroll"><table class="tbl">
-    <thead><tr><th>Nom</th><th>Préfixe</th><th>Droits</th><th>Créé</th><th>Expire</th><th>Dernier usage</th><th></th></tr></thead>
+  <div class="tbl-scroll"><table class="tbl tbl-admin tbl-jetons">
+    <thead><tr><th>Nom</th><th>Préfixe</th><th>Droits</th><th>Créé</th><th>Expire</th><th>Dernier usage</th><th class="actions"></th></tr></thead>
     <tbody>
     {% for j in jetons %}
     <tr class="{{ 'ligne-revoquee' if j.revoque }}">
@@ -61,17 +61,19 @@
       <td>{{ j.cree[:10] }}</td>
       <td>{{ j.expire[:10] if j.expire else 'jamais' }}</td>
       <td>{{ j.dernier_usage[:16]|replace('T', ' ') if j.dernier_usage else 'jamais' }}</td>
-      <td>
-        {% if j.revoque %}
-        <span class="badge badge-neutre">révoqué {{ j.revoque[:10] }}</span>
-        <form method="post" action="/admin/jetons/{{ j.id }}/supprimer" class="en-ligne">
-          <button type="submit" class="bouton bouton-mini">Supprimer</button>
-        </form>
-        {% else %}
-        <form method="post" action="/admin/jetons/{{ j.id }}/revoquer" class="en-ligne">
-          <button type="submit" class="bouton bouton-mini bouton-danger">Révoquer</button>
-        </form>
-        {% endif %}
+      <td class="actions">
+        <div class="actions-ligne">
+          {% if j.revoque %}
+          <span class="badge badge-neutre">révoqué {{ j.revoque[:10] }}</span>
+          <form method="post" action="/admin/jetons/{{ j.id }}/supprimer">
+            <button type="submit" class="bouton bouton-ligne">Supprimer</button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin/jetons/{{ j.id }}/revoquer">
+            <button type="submit" class="bouton bouton-ligne bouton-danger">Révoquer</button>
+          </form>
+          {% endif %}
+        </div>
       </td>
     </tr>
     {% endfor %}
@@ -85,8 +87,8 @@
 <section class="bloc">
   <h2>Points d'accès</h2>
   <table class="fiche">
-    <tr><th>API REST</th><td><code>{{ base_url }}/api/v1/</code> — documentation : <a href="/api/v1/docs">/api/v1/docs</a></td></tr>
-    <tr><th>Serveur MCP</th><td><code>{{ base_url }}/mcp</code> — transport HTTP (streamable), sans état</td></tr>
+    <tr><th>API REST</th><td><code>{{ base_url }}/api/v1/</code>, documentation : <a href="/api/v1/docs">/api/v1/docs</a></td></tr>
+    <tr><th>Serveur MCP</th><td><code>{{ base_url }}/mcp</code>, transport HTTP (streamable), sans état</td></tr>
     <tr><th>Guide de l'agent</th><td>outil <code>guide</code> du serveur MCP, ou <code>GET /api/v1/guide</code></td></tr>
     <tr><th>En-tête</th><td><code>Authorization: Bearer &lt;jeton&gt;</code></td></tr>
   </table>

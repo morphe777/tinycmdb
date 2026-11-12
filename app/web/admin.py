@@ -238,11 +238,17 @@ def creer_routeur(data, redacteur, templates, render, lire_formulaire, meme_orig
     # -- listes --------------------------------------------------------------
     @r.get("/listes")
     def listes(request: Request, table: str = Query("node")):
-        if table not in modele.TABLES:
-            table = "node"
+        toutes = depot.champs_a_options()
+        # Un onglet par table qui A des listes, et seulement celles-là : un onglet qui
+        # n'ouvre sur rien ne sert qu'à faire chercher ce qu'il devrait contenir. Un champ
+        # personnalisé de type liste fait apparaître l'onglet de sa table.
+        avec_listes = {liste["tab"] for liste in toutes}
+        tables = [(k, modele.table(k).libelle) for k in modele.TABLES if k in avec_listes]
+        if table not in avec_listes:
+            table = tables[0][0] if tables else "node"
         snap = data.get()
         groupes = []
-        for liste in depot.champs_a_options():
+        for liste in toutes:
             if liste["tab"] != table:
                 continue
             options = []
@@ -253,8 +259,9 @@ def creer_routeur(data, redacteur, templates, render, lire_formulaire, meme_orig
                                                                    o["valeur"])})
             groupes.append({**liste, "libelle": _libelle_champ(liste["champ"]),
                             "options": options})
-        return page(request, "listes.html", table=table, groupes=groupes,
-                    couleurs=[(c, store._teinte(c)) for c in modele.COULEURS])
+        return page(request, "listes.html", table=table, tables=tables, groupes=groupes,
+                    couleurs=[(c, store._teinte(c)) for c in modele.COULEURS],
+                    store_teinte=store._teinte)
 
     @r.post("/listes/ajouter")
     async def ajouter_option(request: Request):
@@ -297,7 +304,9 @@ def creer_routeur(data, redacteur, templates, render, lire_formulaire, meme_orig
             n = depot.supprimer_option(ident, _int(f.get("remplacement")), ACTEUR)
         except ErreurDonnee as exc:
             return _retour(retour, erreur=str(exc))
-        return _retour(retour, ok=f"Option « {o['valeur']} » supprimée ({n} lignes concernées).")
+        return _retour(retour, ok=f"Option « {o['valeur']} » supprimée "
+                       + (f"({n} ligne{'s' if n > 1 else ''} concernée{'s' if n > 1 else ''})."
+                          if n else "(aucune ligne concernée)."))
 
     # -- champs personnalisés ------------------------------------------------
     @r.get("/champs")
