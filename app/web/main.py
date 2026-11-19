@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from cmdb.depot import BaseInaccessible
@@ -63,6 +63,22 @@ app = FastAPI(title="TinyCMDB", docs_url=None, redoc_url=None, openapi_url=None,
               lifespan=_cycle_de_vie)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+# Le navigateur réclame ces deux adresses de lui-même, à la racine, quelle que soit la
+# page : les réponses JSON de l'API et sa documentation n'ont pas de <link rel="icon">,
+# et Safari ignore l'icône SVG. Sans elles, l'onglet reste sans icône ou garde en cache
+# un 404.
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(BASE_DIR / "static" / "favicon.ico", media_type="image/x-icon",
+                        headers={"Cache-Control": "public, max-age=604800"})
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+def icone_apple():
+    return FileResponse(BASE_DIR / "static" / "apple-touch-icon.png",
+                        headers={"Cache-Control": "public, max-age=604800"})
 
 # Chemin d'URL vers type d'objet : l'inverse de store.URL_PREFIX, pour retrouver
 # la table visée par un formulaire à partir de l'adresse d'où il vient.

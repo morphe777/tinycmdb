@@ -129,6 +129,31 @@ code { font-family: var(--mono); font-size: .88em; }
 }
 .topbar nav a:hover { color: var(--encre); text-decoration: none; }
 .topbar nav a.actif { color: var(--auto); border-bottom-color: var(--auto); font-weight: 550; }
+/* Sous-menus : le parent se lit comme une entrée ordinaire, le panneau flotte dessous. */
+.sous-menu-groupe { position: relative; }
+.sous-menu-groupe summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 5px;
+  padding: 14px 12px; color: var(--encre-2); font-size: 14px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; user-select: none;
+}
+.sous-menu-groupe summary::-webkit-details-marker { display: none; }
+.sous-menu-groupe summary:hover, .sous-menu-groupe[open] summary { color: var(--encre); }
+.sous-menu-groupe summary.actif { color: var(--auto); border-bottom-color: var(--auto); font-weight: 550; }
+.sous-menu-groupe summary svg { width: 10px; height: 10px; fill: none; stroke: currentColor;
+                                stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+                                transition: transform .15s; }
+.sous-menu-groupe[open] summary svg { transform: rotate(180deg); }
+.sous-menu {
+  position: absolute; top: 100%; left: 4px; min-width: 170px; z-index: 20;
+  display: flex; flex-direction: column; padding: 5px;
+  background: var(--surface); border: 1px solid var(--trait); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+.topbar nav .sous-menu a {
+  padding: 8px 11px; border: 0; margin: 0; border-radius: 7px; white-space: nowrap;
+}
+.topbar nav .sous-menu a:hover { background: var(--surface-2); }
+.topbar nav .sous-menu a.actif { background: var(--auto-doux); }
 .recherche input {
   font: inherit; font-size: 13.5px; width: 270px; max-width: 40vw;
   padding: 7px 11px; border: 1px solid var(--trait-fort); border-radius: 9px;
@@ -600,6 +625,14 @@ h1 .appicon { width: 30px; height: 30px; border-radius: 12px; font-size: 15px; m
   }
   .topbar nav a.actif { border-left-color: var(--auto); border-bottom-color: transparent;
                         background: var(--auto-doux); border-radius: 0 7px 7px 0; }
+  /* Au téléphone, le sous-menu se déplie en place, en retrait, dans la liste. */
+  .sous-menu-groupe summary { padding: 11px 4px; border-bottom: 0; margin: 0; }
+  .sous-menu-groupe summary.actif { border-bottom-color: transparent; }
+  .sous-menu { position: static; box-shadow: none; border: 0; border-radius: 0;
+               padding: 0 0 4px 14px; background: transparent; min-width: 0; }
+  .topbar nav .sous-menu a { padding: 9px 4px; border-left: 2px solid transparent;
+                             border-radius: 0 7px 7px 0; }
+  .topbar nav .sous-menu a.actif { border-left-color: var(--auto); }
   .recherche { order: 2; flex: 1; min-width: 0; }
   .recherche input { width: 100%; max-width: none; }
   .theme { order: 1; }

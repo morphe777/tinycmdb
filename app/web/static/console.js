@@ -20,8 +20,22 @@
     var ouvert = nav.classList.toggle("ouvert");
     bouton.setAttribute("aria-expanded", String(ouvert));
   });
+  var groupes = nav.querySelectorAll(".sous-menu-groupe");
+  function fermer(sauf) {
+    groupes.forEach(function (g) { if (g !== sauf) { g.open = false; } });
+  }
   nav.addEventListener("click", function (e) {
-    if (e.target.tagName === "A") { nav.classList.remove("ouvert"); }
+    if (e.target.tagName === "A") { nav.classList.remove("ouvert"); fermer(null); }
+  });
+  // Un seul sous-menu ouvert à la fois ; un clic ailleurs ou Échap les referme.
+  groupes.forEach(function (g) {
+    g.addEventListener("toggle", function () { if (g.open) { fermer(g); } });
+  });
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest(".sous-menu-groupe")) { fermer(null); }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { fermer(null); }
   });
 })();
 

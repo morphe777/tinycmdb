@@ -9,7 +9,12 @@
    lorsque le lien Internet est coupé — c'est l'un des moments où elle sert. #}
 <link rel="stylesheet" href="/static/console.css?v={{ css_version }}">
 <script src="/static/console.js?v={{ js_version }}" defer></script>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230d6b6b'/><rect x='13' y='17' width='38' height='7' rx='3.5' fill='white' opacity='.95'/><rect x='13' y='28.5' width='38' height='7' rx='3.5' fill='white' opacity='.5'/><rect x='13' y='40' width='24' height='7' rx='3.5' fill='%23b793d3'/></svg>">
+{# De vrais fichiers plutôt qu'une icône SVG en ligne (data:) : Safari n'affiche pas les
+   icônes SVG, et un reverse proxy qui pose `img-src 'self'` bloque les URI data:. L'ICO
+   d'abord pour les navigateurs qui prennent le premier venu, le SVG pour les autres. #}
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script>
 // Appliqué avant le premier rendu : un thème posé après coup produit un éclair blanc au
 // chargement de chaque page. Trois états — clair, sombre, ou le réglage du système.
@@ -44,16 +49,34 @@
           aria-controls="menu-principal" aria-label="Menu">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
   </button>
+  {# Neuf entrées ne tenaient plus sur une ligne : ce qui décrit l'infrastructure, et ce
+     qui concerne la CMDB elle-même, passent chacun dans un sous-menu. Ouverture au clic et
+     non au survol — le survol est capricieux à la souris et n'existe pas au doigt. Les
+     adresses ne changent pas ; le parent s'allume quand une de ses pages est ouverte. #}
+  {% set chemin = request.url.path %}
+  {% macro groupe(libelle, actif, entrees) %}
+  <details class="sous-menu-groupe">
+    <summary class="{{ 'actif' if actif }}">{{ libelle }}<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></summary>
+    <div class="sous-menu">
+      {% for url, nom, allume in entrees %}<a href="{{ url }}" class="{{ 'actif' if allume }}">{{ nom }}</a>{% endfor %}
+    </div>
+  </details>
+  {% endmacro %}
   <nav id="menu-principal">
-    <a href="/" class="{{ 'actif' if request.url.path == '/' }}">Tableau de bord</a>
-    <a href="/infra" class="{{ 'actif' if request.url.path.startswith('/infra') }}">Infrastructure</a>
-    <a href="/materiel" class="{{ 'actif' if request.url.path.startswith(('/materiel', '/cpu/', '/composant/')) }}">Matériel</a>
-    <a href="/stacks" class="{{ 'actif' if request.url.path.startswith('/stack') }}">Stacks</a>
-    <a href="/securite" class="{{ 'actif' if request.url.path.startswith('/securite') }}">Sécurité</a>
-    <a href="/applications" class="{{ 'actif' if request.url.path.startswith('/application') }}">Applications</a>
-    <a href="/ipam" class="{{ 'actif' if request.url.path.startswith(('/ipam', '/vlan', '/ip/')) }}">IPAM</a>
-    <a href="/etat" class="{{ 'actif' if request.url.path.startswith('/etat') }}">État</a>
-    <a href="/admin" class="{{ 'actif' if request.url.path.startswith('/admin') }}">Administration</a>
+    <a href="/" class="{{ 'actif' if chemin == '/' }}">Tableau de bord</a>
+    {% set en_infra = chemin.startswith(('/infra', '/noeud/')) %}
+    {% set en_materiel = chemin.startswith(('/materiel', '/cpu/', '/composant/')) %}
+    {% set en_stacks = chemin.startswith('/stack') %}
+    {{ groupe('Infrastructure', en_infra or en_materiel or en_stacks,
+              [('/infra', 'Machines', en_infra), ('/materiel', 'Matériel', en_materiel),
+               ('/stacks', 'Stacks', en_stacks)]) }}
+    <a href="/applications" class="{{ 'actif' if chemin.startswith('/application') }}">Applications</a>
+    <a href="/ipam" class="{{ 'actif' if chemin.startswith(('/ipam', '/vlan', '/ip/')) }}">IPAM</a>
+    <a href="/securite" class="{{ 'actif' if chemin.startswith('/securite') }}">Sécurité</a>
+    {% set en_etat = chemin.startswith('/etat') %}
+    {% set en_admin = chemin.startswith('/admin') %}
+    {{ groupe('Système', en_etat or en_admin,
+              [('/etat', 'État', en_etat), ('/admin', 'Administration', en_admin)]) }}
   </nav>
   <form class="recherche" action="/recherche" method="get" role="search">
     <input type="search" name="q" value="{{ q|default('') }}" placeholder="IP, MAC, hôte, conteneur, image…"
