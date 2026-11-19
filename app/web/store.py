@@ -1,6 +1,6 @@
 """Instantané complet de la CMDB en mémoire, et le graphe qui va avec.
 
-Les six tables sont lues d'un coup depuis SQLite (`cmdb.depot`), dans la forme héritée de
+Les tables sont lues d'un coup depuis SQLite (`cmdb.depot`), dans la forme héritée de
 Baserow — les liens reviennent sous forme `[{"id": 12, "value": "mytools"}]` — et le
 graphe est reconstruit ici, une fois, pour tout le monde. Plutôt que d'écrire une requête
 par écran, chaque écran lit le même graphe : il tient en mémoire sans effort.
@@ -46,6 +46,8 @@ URL_PREFIX = {
     "ipam": "ip",
     "vlan": "vlan",
     "application": "application",
+    "cpu": "cpu",
+    "composant": "composant",
 }
 
 # Domaines de l'écran Infrastructure, dans l'ordre d'affichage. Adossés à Node.Type, qui
@@ -254,12 +256,21 @@ class Snapshot:
         self.perso = perso or {}
         self.parametres = parametres or {}
 
-        self.nodes = [Obj("node", r, "Name") for r in rows_by_kind["node"]]
-        self.containers = [Obj("container", r, "Name") for r in rows_by_kind["container"]]
-        self.images = [Obj("image", r, "Reference") for r in rows_by_kind["image"]]
-        self.ips = [Obj("ipam", r, "Address") for r in rows_by_kind["ipam"]]
-        self.vlans = [Obj("vlan", r, "name") for r in rows_by_kind["vlan"]]
-        self.apps = [Obj("application", r, "Name") for r in rows_by_kind["application"]]
+        # `.get` : une reprise Baserow construit aussi un instantané, à partir des seules
+        # tables que Baserow connaissait.
+        lignes = lambda kind: rows_by_kind.get(kind, [])
+        self.nodes = [Obj("node", r, "Name") for r in lignes("node")]
+        self.containers = [Obj("container", r, "Name") for r in lignes("container")]
+        self.images = [Obj("image", r, "Reference") for r in lignes("image")]
+        self.ips = [Obj("ipam", r, "Address") for r in lignes("ipam")]
+        self.vlans = [Obj("vlan", r, "name") for r in lignes("vlan")]
+        self.apps = [Obj("application", r, "Name") for r in lignes("application")]
+        self.cpus = [Obj("cpu", r, "Name") for r in lignes("cpu")]
+        self.composants = [Obj("composant", r, "Name") for r in lignes("composant")]
+        for c in self.composants:
+            # Un composant saisi sans nom reste désignable : par son modèle, sinon sa clé.
+            if not c.get("Name"):
+                c.name = c.get("Model") or c.get("UID") or c.name
 
         self.by_kind = {
             "node": {o.id: o for o in self.nodes},
@@ -268,6 +279,8 @@ class Snapshot:
             "ipam": {o.id: o for o in self.ips},
             "vlan": {o.id: o for o in self.vlans},
             "application": {o.id: o for o in self.apps},
+            "cpu": {o.id: o for o in self.cpus},
+            "composant": {o.id: o for o in self.composants},
         }
 
         self._link_graph()
@@ -288,9 +301,25 @@ class Snapshot:
             node.containers = []
             node.ips = []
             node.apps = self._resolve("application", node.row, "Application")
+            cpus = self._resolve("cpu", node.row, "CPU")
+            node.cpu = cpus[0] if cpus else None
+            node.composants = []
+            node.devices = []
         for node in self.nodes:
             if node.parent:
                 node.parent.children.append(node)
+
+        for cpu in self.cpus:
+            cpu.nodes = [n for n in self.nodes if n.cpu is cpu]
+        for comp in self.composants:
+            hotes = self._resolve("node", comp.row, "Host")
+            comp.host = hotes[0] if hotes else None
+            cibles = self._resolve("node", comp.row, "Assigned_to")
+            comp.assigned = cibles[0] if cibles else None
+            if comp.host:
+                comp.host.composants.append(comp)
+            if comp.assigned:
+                comp.assigned.devices.append(comp)
 
         for image in self.images:
             image.containers = []
@@ -394,10 +423,14 @@ class Snapshot:
                                         -(i.num("CVE_high") or 0), i.name.lower()))
         self.ips.sort(key=lambda ip: ip.num("IP_int") or _ip_to_int(ip.get("Address")) or 0)
         self.vlans.sort(key=lambda v: v.num("vlan_id") or 0)
+        self.cpus.sort(key=key)
+        self.composants.sort(key=_ordre_composant)
         for node in self.nodes:
             # Par nom : on cherche « myTools » dans la liste, pas le vmid 101.
             node.children.sort(key=lambda n: n.name.lower())
             node.containers.sort(key=key)
+            node.composants.sort(key=_ordre_composant)
+            node.devices.sort(key=_ordre_composant)
 
     def _marquer_perdus(self):
         """Marque les assets que le collecteur ne revoit plus.
@@ -411,7 +444,7 @@ class Snapshot:
         assets de la même table, et non l'âge absolu. Un collecteur à l'arrêt ne fait
         disparaître personne.
         """
-        for population in (self.nodes, self.containers, self.images, self.ips):
+        for population in (self.nodes, self.containers, self.images, self.ips, self.composants):
             for obj in population:
                 obj.perdu = False
             autos = [o for o in population if not o.is_manual and o.dt("Last_seen")]
@@ -543,6 +576,9 @@ class Snapshot:
         """
         out = []
         for hv in self.hypervisors:
+            cpu = hv.cpu
+            sockets = hv.num("Sockets") or 1
+            coeurs = (cpu.num("Cores") * sockets) if cpu and cpu.num("Cores") else None
             demarres = [g for g in hv.children if g.sel("Status") == "Running"]
             vcpu_hv = hv.num("vCPU") or 0
             ram_hv = hv.num("RAM_Gb") or 0
@@ -557,6 +593,12 @@ class Snapshot:
                 "ram": ram, "ram_capacite": ram_hv, "ram_total": ram_total,
                 "ram_pct": round(100 * ram / ram_hv) if ram_hv else 0,
                 "demarres": len(demarres), "invites": len(hv.children),
+                "cpu": cpu, "coeurs": coeurs, "sockets": sockets,
+                # Ce qui est engagé par cœur physique : le chiffre qui dit si l'hôte est
+                # chargé, là où le rapport aux threads flatte de moitié.
+                "vcpu_par_coeur": round(vcpu / coeurs, 2) if coeurs else None,
+                "disques_go": sum(c.num("Capacity_Gb") or 0 for c in hv.composants
+                                  if c.sel("Category") == "Disk"),
             })
         return out
 
@@ -583,7 +625,7 @@ class Snapshot:
         """
         now = datetime.now(timezone.utc)
         out = []
-        for population in (self.nodes, self.containers, self.images, self.ips):
+        for population in (self.nodes, self.containers, self.images, self.ips, self.composants):
             autos = [o for o in population if not o.is_manual and o.dt("Last_seen")]
             if not autos:
                 continue
@@ -797,7 +839,15 @@ class Snapshot:
     def _search_index(self):
         for node in self.nodes:
             yield node, [node.name, node.get("OS"), node.sel("Type"), str(node.get("vmid") or ""),
-                         " ".join(node.multi("Roles")), node.get("notes")]
+                         " ".join(node.multi("Roles")), node.get("notes"),
+                         node.cpu.name if node.cpu else "", node.get("Motherboard"),
+                         node.sel("Arch"), node.get("CPU_type")]
+        for cpu in self.cpus:
+            yield cpu, [cpu.name, cpu.sel("Vendor"), cpu.get("Generation"), cpu.get("iGPU")]
+        for comp in self.composants:
+            yield comp, [comp.name, comp.get("Model"), comp.get("Vendor"), comp.get("Chipset"),
+                         comp.get("Reference"), comp.get("Serial"), comp.sel("Category"),
+                         comp.get("Address"), comp.host.name if comp.host else ""]
         for container in self.containers:
             yield container, [container.name, container.get("Service"), container.get("Stack"),
                               container.get("Ports"), container.get("Compose_path"),
@@ -890,6 +940,18 @@ def _build_queues(snap):
 # Emplacements conventionnels, essayés dans l'ordre par le navigateur quand la découverte
 # côté serveur n'a rien donné.
 _CHEMINS_ICONE = ("/favicon.ico", "/apple-touch-icon.png", "/favicon.png", "/favicon.svg")
+
+
+# Ordre d'affichage des composants : ce qui structure une machine d'abord (cartes, puis
+# disques), les périphériques USB ensuite.
+_ORDRE_CATEGORIES = ("GPU", "Accelerator", "Network", "Wireless", "Storage controller", "Disk",
+                     "USB controller", "USB device", "Other")
+
+
+def _ordre_composant(c):
+    cat = c.sel("Category")
+    rang = _ORDRE_CATEGORIES.index(cat) if cat in _ORDRE_CATEGORIES else len(_ORDRE_CATEGORIES)
+    return (rang, c.get("Address") or "", c.name.lower())
 
 
 def _verdict_fraicheur(age_heures, cadence_secondes):

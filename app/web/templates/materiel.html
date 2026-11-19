@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% import "listes.html" as l with context %}
+{% block titre %}Matériel{% endblock %}
+
+{#
+  Le parc matériel : ce que sont les machines. Le référentiel des processeurs d'abord — une
+  ligne par modèle, partagée par toutes les machines qui le portent —, puis les composants,
+  machine par machine.
+#}
+{% block contenu %}
+<div class="page">
+  <div class="entete-page">
+    <h1>Matériel</h1>
+  </div>
+  {{ m.creation('creer-cpu', 'Nouveau processeur', '/creer/cpu', formulaires.cpu,
+                nouveau == 'cpu', creation_erreur if nouveau == 'cpu', '/materiel') }}
+  {{ m.creation('creer-composant', 'Nouveau composant', '/creer/composant', formulaires.composant,
+                nouveau == 'composant', creation_erreur if nouveau == 'composant', '/materiel') }}
+
+  <section class="bloc">
+    <h2>Processeurs
+      <span class="compte">{{ snap.cpus|length }} modèles</span>
+      <a class="bouton bouton-discret" href="/materiel?nouveau=cpu#creer-cpu"
+         data-nouvelle="">Nouveau processeur</a>
+      {% call m.aide("Référentiel des processeurs") %}
+        <p>Une ligne par modèle, et non par machine : les caractéristiques d'un processeur
+          ne changent pas, elles se saisissent une fois et valent pour toutes les machines
+          qui le portent.</p>
+        <p>Le collecteur crée la ligne quand il rencontre un modèle inconnu sur un
+          hyperviseur, avec ce que la machine dit d'elle-même : cœurs, threads, fréquence
+          de base quand elle figure dans le nom, niveau x86-64, virtualisation. Il n'y
+          revient ensuite jamais. Le reste — fréquence turbo, TDP, cache, graphique intégré
+          — se complète à la main, ou par un agent à qui on le demande une fois.</p>
+        <p>Pour une machine que Proxmox ne voit pas, créer ici son modèle puis le choisir
+          sur sa fiche.</p>
+      {% endcall %}
+    </h2>
+    {% if snap.cpus %}{{ l.table_cpus(snap.cpus) }}
+    {% else %}<p class="rien">Aucun processeur connu pour l'instant.</p>{% endif %}
+  </section>
+
+  <section class="bloc">
+    <h2>Composants
+      <span class="compte">{{ snap.composants|length }}</span>
+      <a class="bouton bouton-discret" href="/materiel?nouveau=composant#creer-composant"
+         data-nouvelle="">Nouveau composant</a>
+      {% call m.aide("Composants") %}
+        <p>Cartes PCIe, disques et périphériques USB. Ceux des hyperviseurs Proxmox sont
+          relevés à chaque passage du collecteur, avec la VM à laquelle chacun est attribué
+          en passthrough ; ceux du reste du parc se saisissent, et sont alors protégés du
+          collecteur.</p>
+        <p>Un disque qu'une VM reçoit derrière un contrôleur passé en entier — le HBA d'un
+          NAS — n'apparaît pas : l'hyperviseur ne le voit plus. Le contrôleur, lui, figure
+          ici, attribué à la VM.</p>
+        <p>Les ponts, contrôleurs système et l'audio intégré ne sont pas relevés, sauf
+          lorsqu'une VM les reçoit.</p>
+      {% endcall %}
+    </h2>
+    {% for n in machines %}
+    <h3 class="carte-titre">{{ m.lien_ref(n) }}
+      {% if n.cpu %}<span class="compte">{{ n.cpu.name }}{% if n.get('RAM_Gb') %} · {{ n.get('RAM_Gb') }} Go{% endif %}{% if n.sel('RAM_type') %} {{ n.sel('RAM_type') }}{% endif %}{% if n.sel('RAM_ECC') == 'ECC' %} ECC{% endif %}</span>{% endif %}
+    </h3>
+    {% if par_hote.get(n.id) %}{{ l.table_composants(par_hote[n.id], hote=false) }}
+    {% else %}<p class="rien">Aucun composant connu. <a href="/materiel?nouveau=composant&amp;hote={{ n.id }}#creer-composant">En ajouter un</a>.</p>{% endif %}
+    {% endfor %}
+    {% if sans_hote %}
+    <h3 class="carte-titre">Sans machine</h3>
+    {{ l.table_composants(sans_hote, hote=false) }}
+    {% endif %}
+    {% if not machines and not sans_hote %}<p class="rien">Aucun composant connu pour l'instant.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

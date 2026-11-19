@@ -28,6 +28,13 @@ in place rather than a history of what used to be.
 
 - **Discovers** Proxmox nodes (hypervisors, VMs, LXC containers) and the
   containers on each Docker host, through a read-only socket proxy.
+- **Describes the hardware**: CPU model, cores, x86-64 level and architecture of
+  each hypervisor; its PCIe cards, disks (SMART health, wear) and USB devices,
+  with the IOMMU group and the VM each one is passed through to; the full Proxmox
+  configuration of every guest. A CPU model's specifications live once in a
+  reference table, shared by every machine that carries it. What no API can see
+  (motherboard, BIOS, memory type and ECC) is entered by hand — and the rest of
+  the estate, outside Proxmox, too.
 - **Scans** images with [Trivy](https://github.com/aquasecurity/trivy) (CVEs)
   and [Cup](https://github.com/sergi0g/cup) (available updates).
 - **Keeps an IPAM** per VLAN, with an occupancy grid of the /24 where a free
@@ -53,8 +60,11 @@ in. Tools that act read this one through its API; a weekly updater lives outside
 this repository for exactly that reason.
 
 This is not NetBox, GLPI or i-doit. No asset lifecycle management, no ticketing,
-no approval workflow, no multi-tenancy, no history of the estate — the journal
-says who wrote what, not what the infrastructure used to look like. The project
+no approval workflow, no multi-tenancy, no snapshots of the estate — the journal
+says who wrote what and which field changed when, the question a debugging
+session starts with, not what the whole infrastructure looked like on a given
+day. No purchase dates or warranties either: fields of your own can carry them,
+the core does not. The project
 targets a few hundred rows — an estate one person can hold in their head — and
 that ceiling is not a limitation to work around, it is the goal: have what you
 need and no more. If the inventory grows heavy, the thing to look at is the
@@ -247,7 +257,7 @@ address, for instance).
 | **Lists** | The options of every single and multiple select, per table: add, rename, recolour, reorder, delete with reassignment. The values the collector writes or relies on (`Source = Auto / Manual`, the Docker and Proxmox statuses, `Node.Type` Physical / VM / LXC, the `Hypervisor` and `Docker` roles…) can be recoloured but not renamed or deleted — the list is `OPTIONS_PROTEGEES` in `app/cmdb/modele.py`. |
 | **Fields** | Fields of your own on any table, with a help text shown on the records. Deleting one deletes its values, after confirmation. |
 | **Data** | CSV export (`;`-separated, UTF-8 with BOM — opens as-is in a spreadsheet) and import with a preview: each line is shown as a creation, a change or a refusal with its reason, and nothing is written until you confirm. The rows match on `id`, or on the natural key when `id` is empty. |
-| **Journal** | Every write — console, API, MCP, collector creations and deletions — with its author, the field, the value before and after. A deleted row is kept in full, so it can be retyped. Kept 365 days by default. |
+| **Journal** | Every write — console, API, MCP — with its author, the field, the value before and after; and what the collector observes: creations, deletions, and every field that changes between two passes (a container gone to `Exited`, a new image digest, a VM given more memory, an edited Proxmox configuration, a disk whose SMART health drops). `Last_seen` and CVE counters are left out: they change on every pass. A deleted row is kept in full, so it can be retyped. Kept 365 days by default. |
 | **Backups** | The copies, a *back up now* button, download, and the settings: interval (24 h), how many copies to keep (14), journal retention. |
 | **Tokens** | API and MCP tokens — see below. |
 
@@ -313,9 +323,18 @@ expiry date.
   of each field and resolved links, search, stacks, work queues, rows on
   borrowed time, health, journal, schema.
 - A **write** token can also change manual fields, create nodes, addresses,
-  VLANs and applications, and attach applications to a stack — through exactly
-  the same code as the console's forms, hence the same refusals, with the same
-  explanations. **No token deletes.**
+  VLANs, applications, CPU models and components, and attach applications to a
+  stack — through exactly the same code as the console's forms, hence the same
+  refusals, with the same explanations. **No token deletes.**
+
+Built for an agent that helps design, choose and debug, four reads matter most:
+
+| | REST | MCP |
+|---|---|---|
+| An object and its whole neighbourhood in one call — host, CPU and its specs, components, guests, containers, applications | `GET /api/v1/contexte/{type}/{id}` | `contexte` |
+| Structured queries — `{"Arch": "arm64"}`, `{"Category": "Disk", "Wearout": ">=50"}`, `{"BIOS": null}` | `GET /api/v1/{type}?filtres=…&champs=…&vides=false` | `lister(filtres=…)` |
+| Room left on each hypervisor — physical cores, vCPU per core, memory promised and free, passed-through devices | `GET /api/v1/capacite` | `capacite` |
+| What changed since a date — including what the collector observed | `GET /api/v1/journal?depuis=2026-11-17` | `journal(depuis=…)` |
 
 ```bash
 curl -H "Authorization: Bearer tcmdb_…" https://cmdb.example/api/v1/noeud?q=pve
@@ -464,6 +483,11 @@ pveum acl modify / --users cmdb@pve --roles PVEAuditor
 pveum user token add cmdb@pve collector --privsep 0
 ```
 
+On Proxmox VE 8, `PVEAuditor` also covers the hardware reads (`Sys.Audit` for
+PCI devices, disks and USB, `Mapping.Audit` for resource mappings). If a call is
+refused, the collector logs the missing privilege and **keeps** what it already
+knew of that hardware: not being able to look is not the same as seeing it gone.
+
 ## Docker setup: socket proxy
 
 The collector never talks to the Docker socket over raw TCP — that is equivalent
@@ -506,8 +530,8 @@ convention when it does not suit a given host.
 
 ## Data model
 
-Six tables, created by the application on first start
-(`app/cmdb/migrations/001_schema.sql`), and described once for the code in
+Eight tables, created by the application on first start
+(`app/cmdb/migrations/`), and described once for the code in
 `app/cmdb/modele.py`. Field names are those of the Baserow era, kept so that the
 API, the CSV files and the code read the same.
 
@@ -523,6 +547,8 @@ database — case-insensitively for names, since DNS does not tell `myTools` fro
 | `IPAM` | `Address` | Proxmox, Docker — manual rows are enriched, not overwritten |
 | `VLAN` | `name` | nobody: a reference table, filled in by hand |
 | `Application` | `Name` | nobody: a business grouping, filled in by hand |
+| `CPU` | `Name` (the model) | seeded by the collector when it meets an unknown model, then by hand |
+| `Composant` | `UID` (`{host}/pci/{slot}`, `disk/{serial}`, `{host}/usb/…`) | Proxmox — except rows with `Source = Manual` |
 
 Fields, table by table:
 
@@ -531,7 +557,13 @@ Fields, table by table:
   `OS`, `vCPU`, `RAM_Gb`, `Disk_Gb`, `Backup` (boolean), `Guest_agent`
   (boolean), `Source` (select: Auto, Manual), `Last_seen` (date), `Roles`
   (multiple select), `Criticality` (select), `Application` (links →
-  Application), `notes`.
+  Application), `notes`. Hardware and configuration: `Arch` (Docker vocabulary:
+  amd64, arm64, arm/v7…), `CPU_level` (x86-64-v1…v4 actually exposed — a VM in
+  `kvm64` is v1 whatever its host), `Machine`; on a physical machine `CPU` (link
+  → CPU), `Sockets`, `Kernel`, and, by hand, `Motherboard`, `BIOS`, `RAM_type`,
+  `RAM_ECC`, `RAM_MHz`, `RAM_modules`, `RAM_max_Gb`; on a Proxmox guest
+  `CPU_type` and `Config` (the whole Proxmox configuration, as `key: value`
+  lines, cloud-init secrets removed).
 - **Container** — `UID`, `Name`, `Host` (link → Node), `Image` (link → Images),
   `Service`, `Status` (select), `Ports`, `Restart_policy` (select), `Stack`,
   `Compose_path`, `Type` (select), `Last_seen` (date), `Application - Stack`
@@ -546,6 +578,24 @@ Fields, table by table:
   `dhcp` (boolean), `dhcp_range`, `dns`, `notes`.
 - **Application** — `Name`, `Status` (select), `Criticality` (select),
   `Capability` (multiple select), `URL`, `URL 2`, `Doc`, `Notes`.
+- **CPU** — one row per *model*: `Name`, `Vendor`, `Arch`, `Generation`,
+  `Cores`, `Threads`, `Base_MHz`, `Boost_MHz`, `TDP_W`, `L3_MB`, `x86_level`,
+  `iGPU`, `Virtualization`, `Max_RAM_Gb`, `Doc`, `Notes`. The collector fills
+  in what the machine reports (cores, threads, base clock read from the model
+  name, x86-64 level, VT-x/AMD-V) once, at creation, and never again; it never
+  looks anything up on the Internet. The rest is typed in once — or by an agent
+  asked to do it once.
+- **Composant** — `UID`, `Name`, `Category` (Network, Wireless, Disk, Storage
+  controller, GPU, Accelerator, USB controller, USB device, Other), `Bus`,
+  `Host` and `Assigned_to` (links → Node: where it is installed, which VM it is
+  passed through to), `Vendor`, `Model`, `Reference`, `Chipset`, `Address`
+  (PCI slot, device path), `IOMMU_group`, `Serial`, `Ports`, `Speed_Mbps`,
+  `Capacity_Gb`, `Standard` (select: 2.5GbE, Wi-Fi 6, USB 3.1, Zigbee…),
+  `Usage`, `Health`, `Wearout`, `Firmware`, `Doc`, `Source`, `Last_seen`,
+  `Notes`. One row per PCI *slot* (a 4-port card is one card), bridges and
+  chipset functions left out unless a VM receives them. Name, category, vendor
+  and model are the collector's guess from the PCI/USB ids, written once: a
+  correction sticks.
 
 The reverse links (a node's containers, an image's containers) are not stored
 twice: they are computed. Fields of your own come on top, from *Administration

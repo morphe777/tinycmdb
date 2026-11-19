@@ -16,6 +16,8 @@
     {% elif kind == 'image' %}{{ table_images(objs) }}
     {% elif kind == 'ipam' %}{{ table_ips(objs) }}
     {% elif kind == 'application' %}{{ table_apps(objs) }}
+    {% elif kind == 'cpu' %}{{ table_cpus(objs) }}
+    {% elif kind == 'composant' %}{{ table_composants(objs) }}
     {% else %}
       <ul class="liste-simple">{% for o in objs %}<li>{{ m.lien(o) }}</li>{% endfor %}</ul>
     {% endif %}
@@ -140,6 +142,62 @@
     <td class="num"><span class="cve"><b class="{{ 'cve-crit' if a.cve_critical else 'cve-zero' }}">{{ a.cve_critical }}</b><i>/</i><span class="{{ 'cve-high' if a.cve_high else 'cve-zero' }}">{{ a.cve_high }}</span></span></td>
     <td>{{ m.chaines_inline(a.hosts, vide='—') }}</td>
     <td>{% if a.get('URL') %}<a href="{{ a.get('URL') }}" target="_blank" rel="noreferrer noopener">ouvrir</a>{% else %}<span class="vide">—</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}
+
+{% macro table_cpus(objs) %}
+<div class="tbl-scroll"><table class="tbl">
+  <thead><tr>
+    <th>Processeur</th><th>Architecture</th><th class="num">Cœurs / threads</th>
+    <th class="num">Base / turbo</th><th class="num">TDP</th><th>Niveau</th><th>Graphique</th><th>Machines</th>
+  </tr></thead>
+  <tbody>
+  {% for c in objs %}
+  <tr>
+    <td>{{ m.lien_ref(c) }}</td>
+    <td>{{ c.sel('Arch') or '' }}</td>
+    <td class="num">{{ c.get('Cores') or '?' }} / {{ c.get('Threads') or '?' }}</td>
+    <td class="num">{% if c.get('Base_MHz') %}{{ c.get('Base_MHz') }}{% else %}?{% endif %} /
+        {% if c.get('Boost_MHz') %}{{ c.get('Boost_MHz') }}{% else %}?{% endif %} <span class="unite">MHz</span></td>
+    <td class="num">{% if c.get('TDP_W') %}{{ c.get('TDP_W') }} <span class="unite">W</span>{% endif %}</td>
+    <td>{{ c.sel('x86_level') or '' }}</td>
+    <td>{{ c.get('iGPU') or '' }}</td>
+    <td>{{ m.liens(c.nodes, vide='aucune') }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}
+
+{% macro table_composants(objs, hote=true) %}
+<div class="tbl-scroll"><table class="tbl">
+  <thead><tr>
+    <th>Composant</th><th>Catégorie</th><th>Bus</th>{% if hote %}<th>Installé dans</th>{% endif %}
+    <th>Attribué à</th><th>Caractéristiques</th><th>Adresse</th>
+  </tr></thead>
+  <tbody>
+  {% for c in objs %}
+  <tr>
+    <td>{{ m.lien(c) }}</td>
+    <td>{{ m.badge_option(c.sel('Category') or '—', c.sel_couleur('Category')) }}</td>
+    <td>{{ c.sel('Bus') or '' }}</td>
+    {% if hote %}<td>{% if c.host %}{{ m.lien_ref(c.host) }}{% else %}<span class="vide">—</span>{% endif %}</td>{% endif %}
+    <td>{% if c.assigned %}{{ m.lien_ref(c.assigned) }}{% else %}<span class="vide">hôte</span>{% endif %}</td>
+    <td>
+      {%- set traits = [] -%}
+      {%- if c.get('Capacity_Gb') %}{% if traits.append(c.get('Capacity_Gb') ~ ' Go') %}{% endif %}{% endif -%}
+      {%- if c.get('Ports') %}{% if traits.append(c.get('Ports') ~ ' ports') %}{% endif %}{% endif -%}
+      {%- if c.get('Speed_Mbps') %}{% if traits.append(c.get('Speed_Mbps') ~ ' Mbit/s') %}{% endif %}{% endif -%}
+      {%- if c.sel('Standard') %}{% if traits.append(c.sel('Standard')) %}{% endif %}{% endif -%}
+      {%- if c.get('Usage') %}{% if traits.append(c.get('Usage')) %}{% endif %}{% endif -%}
+      {%- if c.get('Wearout') is not none %}{% if traits.append('usure ' ~ c.get('Wearout') ~ ' %') %}{% endif %}{% endif -%}
+      {{ traits|join(' · ') }}
+      {%- if c.get('Health') and c.get('Health') not in ('PASSED', 'OK', 'UNKNOWN') %} <span class="alerte-inline">{{ c.get('Health') }}</span>{% endif %}
+    </td>
+    <td>{% if c.get('Address') %}<code>{{ c.get('Address') }}</code>{% endif %}</td>
   </tr>
   {% endfor %}
   </tbody>

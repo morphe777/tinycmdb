@@ -1,4 +1,4 @@
-"""Le modèle de données : six tables, et la forme de chacun de leurs champs.
+"""Le modèle de données : huit tables, et la forme de chacun de leurs champs.
 
 Les noms de champ sont ceux que la CMDB emploie partout — gabarits, collecteur, règles de
 provenance (`web/schema.py`), CSV, API et MCP. Ils viennent de Baserow et sont gardés
@@ -70,10 +70,30 @@ TABLES = {
         Champ("Source", "select", "source"),
         Champ("Last_seen", "horodatage", "last_seen"),
         Champ("notes", "long", "notes"),
+        # Matériel et configuration (migration 002). Les premiers sont relevés sur
+        # l'hyperviseur ou dans la configuration Proxmox d'un invité ; carte mère, BIOS et
+        # mémoire ne sont visibles d'aucune API sans droits root, ils se saisissent.
+        Champ("Arch", "select", "arch"),
+        Champ("CPU", "lien", "cpu_id", "cpu"),
+        Champ("Sockets", "entier", "sockets"),
+        Champ("CPU_type", "texte", "cpu_type"),
+        Champ("CPU_level", "select", "cpu_level"),
+        Champ("Machine", "texte", "machine"),
+        Champ("Kernel", "texte", "kernel"),
+        Champ("Motherboard", "texte", "motherboard"),
+        Champ("BIOS", "texte", "bios"),
+        Champ("RAM_type", "select", "ram_type"),
+        Champ("RAM_ECC", "select", "ram_ecc"),
+        Champ("RAM_MHz", "entier", "ram_mhz"),
+        Champ("RAM_modules", "texte", "ram_modules"),
+        Champ("RAM_max_Gb", "entier", "ram_max_gb"),
+        Champ("Config", "long", "config"),
         Champ("Application", "liens", None, "application",
               ("node_application", "node_id", "application_id")),
         Champ("Container", "inverse", None, "container", ("container", "Host")),
         Champ("IPAM", "inverse", None, "ipam", ("ipam", "Node")),
+        Champ("Components", "inverse", None, "composant", ("composant", "Host")),
+        Champ("Devices", "inverse", None, "composant", ("composant", "Assigned_to")),
     ]),
     "container": _t("container", "container", "Conteneurs", "conteneur", "UID", [
         Champ("UID", "texte", "uid"),
@@ -146,10 +166,62 @@ TABLES = {
         Champ("Containers", "inverse", None, "container", ("container", "Application - Stack")),
         Champ("VM", "inverse", None, "node", ("node", "Application")),
     ]),
+    # Référentiel des modèles de processeur. Un modèle a des caractéristiques fixes : elles
+    # se saisissent une fois, à la main ou par un agent, et valent pour toutes les machines
+    # qui le portent. Le collecteur crée la ligne quand il rencontre un modèle inconnu, avec
+    # ce que la machine dit d'elle-même, puis n'y revient jamais.
+    "cpu": _t("cpu", "cpu", "Processeurs", "processeur", "Name", [
+        Champ("Name", "texte", "name"),
+        Champ("Vendor", "select", "vendor"),
+        Champ("Arch", "select", "arch"),
+        Champ("Generation", "texte", "generation"),
+        Champ("Cores", "entier", "cores"),
+        Champ("Threads", "entier", "threads"),
+        Champ("Base_MHz", "entier", "base_mhz"),
+        Champ("Boost_MHz", "entier", "boost_mhz"),
+        Champ("TDP_W", "entier", "tdp_w"),
+        Champ("L3_MB", "entier", "l3_mb"),
+        Champ("x86_level", "select", "x86_level"),
+        Champ("iGPU", "texte", "igpu"),
+        Champ("Virtualization", "texte", "virtualization"),
+        Champ("Max_RAM_Gb", "entier", "max_ram_gb"),
+        Champ("Doc", "url", "doc"),
+        Champ("Notes", "long", "notes"),
+        Champ("Nodes", "inverse", None, "node", ("node", "CPU")),
+    ]),
+    # Cartes PCIe, disques, périphériques USB. Découverts sur les hyperviseurs Proxmox
+    # (Source = Auto) ou saisis à la main pour le reste du parc (Source = Manual).
+    "composant": _t("composant", "composant", "Composants", "composant", "UID", [
+        Champ("UID", "texte", "uid"),
+        Champ("Name", "texte", "name"),
+        Champ("Category", "select", "category"),
+        Champ("Bus", "select", "bus"),
+        Champ("Host", "lien", "host_id", "node"),
+        Champ("Assigned_to", "lien", "assigned_id", "node"),
+        Champ("Vendor", "texte", "vendor"),
+        Champ("Model", "texte", "model"),
+        Champ("Reference", "texte", "reference"),
+        Champ("Chipset", "texte", "chipset"),
+        Champ("Address", "texte", "address"),
+        Champ("IOMMU_group", "entier", "iommu_group"),
+        Champ("Serial", "texte", "serial"),
+        Champ("Ports", "entier", "ports"),
+        Champ("Speed_Mbps", "entier", "speed_mbps"),
+        Champ("Capacity_Gb", "entier", "capacity_gb"),
+        Champ("Standard", "select", "standard"),
+        Champ("Usage", "texte", "usage"),
+        Champ("Health", "texte", "health"),
+        Champ("Wearout", "entier", "wearout"),
+        Champ("Firmware", "texte", "firmware"),
+        Champ("Doc", "url", "doc"),
+        Champ("Source", "select", "source"),
+        Champ("Last_seen", "horodatage", "last_seen"),
+        Champ("Notes", "long", "notes"),
+    ]),
 }
 
 # Ordre d'écriture et de lecture : une table avant celles qui la référencent.
-ORDRE = ("vlan", "application", "node", "image", "container", "ipam")
+ORDRE = ("vlan", "application", "cpu", "node", "image", "container", "ipam", "composant")
 
 
 def table(kind):
@@ -183,6 +255,15 @@ OPTIONS_PROTEGEES = {
     ("container", "Type"): {"Docker_Compose", "Container"},
     ("ipam", "Status"): {"Used", "Reserved", "To check"},
     ("ipam", "Type"): {"Static", "DHCP-reservation"},
+    ("node", "Arch"): {"amd64", "arm64", "arm/v7", "386", "riscv64"},
+    ("node", "CPU_level"): {"x86-64-v1", "x86-64-v2", "x86-64-v3", "x86-64-v4"},
+    ("cpu", "Vendor"): {"Intel", "AMD"},
+    ("cpu", "Arch"): {"amd64", "arm64", "arm/v7", "386", "riscv64"},
+    ("cpu", "x86_level"): {"x86-64-v1", "x86-64-v2", "x86-64-v3", "x86-64-v4"},
+    ("composant", "Source"): {"Auto", "Manual"},
+    ("composant", "Category"): {"Network", "Wireless", "Disk", "Storage controller", "GPU",
+                                "Accelerator", "USB controller", "USB device", "Other"},
+    ("composant", "Bus"): {"PCIe", "NVMe", "SATA", "USB", "Other"},
 }
 
 

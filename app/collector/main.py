@@ -21,6 +21,7 @@ from . import oui
 from .stockage import Stockage
 from .sources import cup as cup_source
 from .sources import docker as docker_source
+from .sources import materiel
 from .sources import proxmox as proxmox_source
 from .sources import trivy as trivy_source
 
@@ -72,10 +73,15 @@ def run_node_pass(client, cfg):
     # hyperviseurs d'abord : parent_host doit être résolvable pour les invités (règle 2)
     hypervisors = [n for n in nodes if n["type"] == "Physical"]
     guests = [n for n in nodes if n["type"] != "Physical"]
+    cpu_cache = {name.lower(): row for name, row in client.build_cache("cpu", "Name").items()}
 
     for n in hypervisors + guests:
         try:
             fields = _drop_none(dict(n["fields"]))
+            if n.get("cpu"):
+                cpu_row = _ensure_cpu(client, cpu_cache, n["cpu"])
+                if cpu_row:
+                    fields["CPU"] = [cpu_row["id"]]
             parent_name = n["parent_name"]
             if parent_name:
                 # insensible à la casse : un hyperviseur peut avoir été renommé à la main
@@ -121,7 +127,75 @@ def run_node_pass(client, cfg):
         node_cache, cfg.TABLE_NODE, seen, cfg.RETIRE_GRACE_HOURS,
         last_seen_field="Last_seen", manual_gate_field="Source",
     )
+    run_component_pass(client, cfg, node_cache, hypervisors)
     return node_cache, guest_ip_data
+
+
+def _ensure_cpu(client, cpu_cache, seed):
+    """La ligne du référentiel pour ce modèle de processeur, créée s'il est inconnu.
+
+    Le collecteur ne fait qu'amorcer : ce que la machine dit d'elle-même (cœurs, threads,
+    fréquence de base lue dans le nom, niveau x86-64), à la création seulement. La ligne
+    appartient ensuite à la saisie — c'est là qu'on complète une fois pour toutes ce qui
+    ne se mesure pas (turbo, TDP, cache, iGPU) — et n'est jamais supprimée : un modèle qui
+    n'équipe plus rien reste une information.
+    """
+    cle = seed["Name"].lower()
+    if cle in cpu_cache:
+        return cpu_cache[cle]
+    try:
+        row = client.create_row("cpu", seed)
+    except Exception:
+        logger.exception("Création du processeur '%s' en échec", seed["Name"])
+        return None
+    cpu_cache[cle] = row
+    logger.info("+ cpu créé : %s", seed["Name"])
+    return row
+
+
+def run_component_pass(client, cfg, node_cache, hypervisors):
+    """Proxmox (PCI, disques, USB) -> Composant. Après Node : l'hôte et la VM qui reçoit
+    un périphérique doivent être résolvables.
+
+    Ce que Proxmox devine (nom, catégorie, marque, modèle) n'est posé qu'à la création :
+    c'est une proposition, que la saisie corrige et que le passage suivant ne défait pas.
+
+    Une famille qu'un hyperviseur n'a pas pu lister (droits, hôte éteint) garde ses lignes
+    telles quelles : ne pas voir n'est pas constater une absence.
+    """
+    cache = client.build_cache("composant", "UID")
+    ci_nodes = _ci_node_index(node_cache)
+    seen = set()
+
+    for hv in hypervisors:
+        match = ci_nodes.get(hv["name"].lower())
+        host_row = match[1] if match else None
+        for comp in hv.get("components") or []:
+            try:
+                fields = _drop_none(dict(comp["fields"]))
+                fields["Host"] = [host_row["id"]] if host_row else []
+                cible = ci_nodes.get((comp.get("assigned_to") or "").lower())
+                fields["Assigned_to"] = [cible[1]["id"]] if cible else []
+                client.upsert(
+                    cache, "composant", "UID", comp["uid"], fields,
+                    manual_gate_field="Source", auto_label="Auto", last_seen_field="Last_seen",
+                    create_only_fields=_drop_none(dict(comp.get("seed") or {})),
+                )
+                seen.add(comp["uid"])
+            except Exception:
+                logger.exception("Écriture composant '%s' en échec, composant suivant", comp.get("uid"))
+
+        muettes = {f for f, ok in (hv.get("hardware_ok") or {}).items() if not ok}
+        if muettes and host_row:
+            for uid, row in cache.items():
+                hotes = {lien.get("id") for lien in row.get("Host") or []}
+                if host_row["id"] in hotes and materiel.famille_uid(uid) in muettes:
+                    seen.add(uid)
+
+    client.delete_missing(
+        cache, "composant", seen, cfg.RETIRE_GRACE_HOURS,
+        last_seen_field="Last_seen", manual_gate_field="Source",
+    )
 
 
 def _load_vlan_networks(client, table_vlan):
@@ -276,7 +350,7 @@ def _enrich_manual_ipam(client, cfg, networks):
         fields["Last_seen"] = datetime.now(timezone.utc).isoformat()
 
         try:
-            client.update_row(cfg.TABLE_IPAM, row["id"], fields)
+            client.update_row(cfg.TABLE_IPAM, row["id"], fields, avant=row)
             logger.debug("~ IPAM (manuel) enrichi : %s", address)
         except Exception:
             logger.exception("Enrichissement IPAM manuel '%s' en échec", address)
@@ -467,7 +541,7 @@ def run_cup_pass(client, cfg, cup_targets):
         if not mapped:
             continue
         try:
-            client.update_row(cfg.TABLE_IMAGES, row["id"], mapped)
+            client.update_row(cfg.TABLE_IMAGES, row["id"], mapped, avant=row)
         except Exception:
             logger.exception("Mise à jour Cup de l'image '%s' en échec", reference)
 
@@ -493,6 +567,8 @@ def run_trivy_pass(client, cfg):
             result = trivy_source.collect(f"{repo}@{digest}", cfg.TRIVY_CACHE_DIR)
             if result is None:
                 continue
+            # Pas de journal : les deux compteurs bougent au gré de la base de
+            # vulnérabilités, pas de ce qui tourne (voir stockage.MUETS).
             client.update_row(cfg.TABLE_IMAGES, row["id"], {
                 "CVE_critical": result["cve_critical"],
                 "CVE_high": result["cve_high"],

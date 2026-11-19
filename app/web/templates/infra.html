@@ -77,7 +77,8 @@
     <section class="carte-infra {{ 'carte-large' if hv.children|length > 6 }}">
       <h3 class="carte-titre">{{ m.lien(hv) }}
         <span class="compte">{{ hv.children|length }} invités ·
-          {{ hv.get('vCPU') }} vCPU · {{ hv.get('RAM_Gb') }} Go</span>
+          {{ hv.get('vCPU') }} vCPU · {{ hv.get('RAM_Gb') }} Go{% if hv.cpu %} ·
+          <a href="{{ hv.cpu.url }}">{{ hv.cpu.name }}</a>{% endif %}</span>
       </h3>
       <ul class="arbre">
         {% for c in hv.children %}{{ ligne(c) }}{% endfor %}

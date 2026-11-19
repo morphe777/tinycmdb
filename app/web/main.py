@@ -172,7 +172,13 @@ FICHE_FIELDS = {
         ("Criticality", "select"), ("OS", "text"), ("vmid", "text"),
         ("vCPU", "text"), ("RAM_Gb", "unit:Go"), ("Disk_Gb", "unit:Go"),
         ("Backup", "bool"), ("Guest_agent", "bool"),
+        ("Arch", "select"), ("Sockets", "text"), ("CPU_type", "mono"), ("CPU_level", "select"),
+        ("Machine", "text"), ("Kernel", "mono"),
+        ("Motherboard", "text"), ("BIOS", "text"), ("RAM_type", "select"),
+        ("RAM_ECC", "select"), ("RAM_MHz", "unit:MHz"), ("RAM_modules", "text"),
+        ("RAM_max_Gb", "unit:Go"),
         ("Source", "select"), ("Last_seen", "datetime"), ("notes", "long"),
+        ("Config", "config"),
     ],
     "container": [
         ("Status", "select"), ("Type", "select"), ("Stack", "text"),
@@ -201,6 +207,22 @@ FICHE_FIELDS = {
         ("zone", "select"), ("dhcp", "bool"), ("dhcp_range", "mono"),
         ("dns", "mono"), ("notes", "long"),
     ],
+    "cpu": [
+        ("Vendor", "select"), ("Arch", "select"), ("Generation", "text"),
+        ("Cores", "text"), ("Threads", "text"), ("Base_MHz", "unit:MHz"),
+        ("Boost_MHz", "unit:MHz"), ("TDP_W", "unit:W"), ("L3_MB", "unit:Mo"),
+        ("x86_level", "select"), ("iGPU", "text"), ("Virtualization", "text"),
+        ("Max_RAM_Gb", "unit:Go"), ("Doc", "url"), ("Notes", "long"),
+    ],
+    "composant": [
+        ("Category", "select"), ("Bus", "select"), ("Vendor", "text"), ("Model", "text"),
+        ("Reference", "text"), ("Chipset", "text"), ("Address", "mono"),
+        ("IOMMU_group", "text"), ("Serial", "mono"), ("Ports", "text"),
+        ("Speed_Mbps", "unit:Mbit/s"), ("Capacity_Gb", "unit:Go"), ("Standard", "select"),
+        ("Usage", "text"), ("Health", "text"), ("Wearout", "unit:%"), ("Firmware", "text"),
+        ("Doc", "url"), ("UID", "mono"), ("Source", "select"), ("Last_seen", "datetime"),
+        ("Notes", "long"),
+    ],
 }
 
 
@@ -214,6 +236,8 @@ def fiche_rows(snap, obj):
     champs = list(FICHE_FIELDS.get(obj.kind, []))
     champs += [(p["nom"], MODE_PERSO.get(p["type"], "text")) for p in snap.perso.get(obj.kind, [])]
     for field, mode in champs:
+        if not ecriture.applicable(obj, field):
+            continue
         rows.append({
             "field": field,
             "mode": mode,
@@ -320,7 +344,7 @@ def queue_detail(request: Request, key: str):
 
 def _vue_infra(request, nouveau=False, creation_erreur=None, creation=None, code=200):
     snap = snapshot()
-    creation_champs = ecriture.formulaire_creation(snap, "node")
+    creation_champs = ecriture.formulaire_creation(snap, "node", essentiels=True)
     if creation is not None:
         for descr in creation_champs:
             descr["valeur"] = creation.get(descr["champ"], descr["valeur"])
@@ -519,6 +543,52 @@ def ip_detail(request: Request, obj_id: int, edition: int = Query(0),
                    cree=cree)
 
 
+@app.get("/cpu/{obj_id}")
+def cpu_detail(request: Request, obj_id: int, edition: int = Query(0),
+               enregistres: int = Query(-1), cree: int = Query(0)):
+    return _detail(request, "cpu", obj_id, edition=edition, enregistres=enregistres, cree=cree)
+
+
+@app.get("/composant/{obj_id}")
+def composant_detail(request: Request, obj_id: int, edition: int = Query(0),
+                     enregistres: int = Query(-1), cree: int = Query(0)):
+    return _detail(request, "composant", obj_id, edition=edition, enregistres=enregistres,
+                   cree=cree)
+
+
+def _vue_materiel(request, nouveau="", hote=None, creation_erreur=None, creation=None,
+                  code=200):
+    """Le parc matériel : le référentiel des processeurs, puis les composants machine par
+    machine. Deux créations, une par table ; `hote` préremplit la machine quand on vient
+    de sa fiche."""
+    snap = snapshot()
+    formulaires = {}
+    for kind in ("cpu", "composant"):
+        champs = ecriture.formulaire_creation(snap, kind)
+        valeurs = creation if (creation is not None and nouveau == kind) else {}
+        for descr in champs:
+            if kind == "composant" and descr["champ"] == "Host" and hote:
+                descr["valeur"] = hote
+            descr["valeur"] = valeurs.get(descr["champ"], descr["valeur"])
+        formulaires[kind] = champs
+    par_hote = {}
+    for c in snap.composants:
+        par_hote.setdefault(c.host.id if c.host else None, []).append(c)
+    machines = sorted((n for n in snap.nodes if n.id in par_hote or (
+        n.sel("Type") not in store.VIRTUAL_TYPES and (n.cpu or n.get("Motherboard")))),
+        key=lambda n: n.name.lower())
+    return render(request, "materiel.html", snap,
+                  formulaires=formulaires, nouveau=nouveau,
+                  machines=machines, par_hote=par_hote, sans_hote=par_hote.get(None, []),
+                  creation_erreur=creation_erreur, status_code=code)
+
+
+@app.get("/materiel")
+def materiel(request: Request, nouveau: str = Query(""), hote: int = Query(0)):
+    return _vue_materiel(request, nouveau=nouveau if nouveau in ("cpu", "composant") else "",
+                         hote=hote or None)
+
+
 @app.get("/application/{obj_id}")
 def application_detail(request: Request, obj_id: int, edition: int = Query(0),
                        enregistres: int = Query(-1), cree: int = Query(0),
@@ -661,6 +731,30 @@ async def creer_noeud(request: Request):
     return RedirectResponse(f"/noeud/{nouvel_id}?cree=1", status_code=303)
 
 
+@app.post("/creer/cpu")
+@app.post("/creer/composant")
+async def creer_materiel(request: Request):
+    """Ajoute un modèle de processeur au référentiel, ou un composant que Proxmox ne voit
+    pas : la carte d'un NAS, la clé Zigbee d'un Raspberry Pi. Un composant saisi porte
+    `Source = Manual` : le collecteur n'y touchera pas."""
+    prefixe = request.url.path.rsplit("/", 1)[-1]
+    if not _meme_origine(request):
+        raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")
+    donnees = await _formulaire(request)
+    snap = snapshot()
+    try:
+        nouvel_id = redacteur.creer(snap, prefixe, donnees)
+    except (ecriture.EcritureRefusee, ecriture.EcritureImpossible) as exc:
+        message = str(exc) if isinstance(exc, ecriture.EcritureRefusee) \
+            else f"La base a refusé la création : {exc}"
+        code = 400 if isinstance(exc, ecriture.EcritureRefusee) else 503
+        return _vue_materiel(request, nouveau=prefixe, creation_erreur=message, code=code,
+                             creation=ecriture.saisie_brute(
+                                 snap, ecriture.formulaire_creation(snap, prefixe), donnees))
+    snapshot(force=True)
+    return RedirectResponse(f"/{prefixe}/{nouvel_id}?cree=1", status_code=303)
+
+
 @app.post("/creer/vlan")
 async def creer_vlan(request: Request):
     if not _meme_origine(request):
@@ -706,15 +800,16 @@ async def supprimer(request: Request, prefixe: str, obj_id: int):
     snapshot(force=True)
     retour = {"node": "/infra", "container": "/stacks", "image": "/securite",
               "ipam": f"/vlan/{obj.vlan.id}" if kind == "ipam" and obj.vlan else "/ipam",
-              "vlan": "/ipam", "application": "/applications"}[kind]
+              "vlan": "/ipam", "application": "/applications",
+              "cpu": "/materiel", "composant": "/materiel"}[kind]
     return RedirectResponse(retour, status_code=303)
 
 
 @app.post("/provenance/{prefixe}/{obj_id}")
 def provenance(request: Request, prefixe: str, obj_id: int):
-    """Bascule Source entre Auto et Manual sur un nœud ou une adresse."""
+    """Bascule Source entre Auto et Manual sur un nœud, une adresse ou un composant."""
     kind = KIND_PAR_PREFIXE.get(prefixe)
-    if kind not in ("node", "ipam"):
+    if kind not in ("node", "ipam", "composant"):
         raise HTTPException(status_code=404, detail="type sans provenance")
     if not _meme_origine(request):
         raise HTTPException(status_code=403, detail="origine du formulaire non reconnue")

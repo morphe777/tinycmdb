@@ -63,10 +63,42 @@ def champs_scalaires(snap, kind):
     return noms + [p["nom"] for p in snap.perso.get(kind, [])]
 
 
+def _vide(v):
+    return v is None or v == "" or v == []
+
+
+def champs_de(snap, obj, vides=True, choisis=None):
+    """Les champs d'un objet. Sans ceux qui n'ont pas de sens pour lui (la carte mère d'un
+    LXC), sans les vides si `vides` est faux, restreints à `choisis` s'il est donné."""
+    sortie = {}
+    for nom in champs_scalaires(snap, obj.kind):
+        if not ecriture.applicable(obj, nom) or (choisis and nom not in choisis):
+            continue
+        v = _valeur(obj.get(nom))
+        if not vides and _vide(v):
+            continue
+        sortie[nom] = v
+    return sortie
+
+
+def cpu_resume(cpu, sockets=None):
+    """Ce qu'on veut savoir d'un processeur sans ouvrir le référentiel."""
+    if cpu is None:
+        return None
+    return {**resume(cpu), **{k: v for k, v in champs_de_cpu(cpu).items() if not _vide(v)},
+            **({"sockets": sockets} if sockets and sockets > 1 else {})}
+
+
+def champs_de_cpu(cpu):
+    return {nom: _valeur(cpu.get(nom)) for nom in
+            ("Vendor", "Arch", "Generation", "Cores", "Threads", "Base_MHz", "Boost_MHz",
+             "TDP_W", "L3_MB", "x86_level", "iGPU", "Virtualization", "Max_RAM_Gb")}
+
+
 def objet(snap, obj):
     """Description complète d'un objet : ses champs, leur provenance, ses relations, et ce
     qu'on peut y modifier."""
-    champs = {nom: _valeur(obj.get(nom)) for nom in champs_scalaires(snap, obj.kind)}
+    champs = champs_de(snap, obj)
     sortie = {
         **resume(obj),
         "champs": champs,
@@ -84,7 +116,14 @@ def objet(snap, obj):
             "applications": _resumes(obj.apps),
             "applications_directes": _resumes(obj.apps_directes),
             "stacks": _resumes({c.stack.key: c.stack for c in obj.containers if c.stack}.values()),
+            "processeur": cpu_resume(obj.cpu, obj.num("Sockets")),
+            "composants": _resumes(obj.composants),
+            "peripheriques_attribues": _resumes(obj.devices),
         }
+    elif k == "cpu":
+        sortie["liens"] = {"noeuds": _resumes(obj.nodes)}
+    elif k == "composant":
+        sortie["liens"] = {"hote": resume(obj.host), "attribue_a": resume(obj.assigned)}
     elif k == "container":
         sortie["liens"] = {
             "hote": resume(obj.host), "image": resume(obj.image),
@@ -111,13 +150,54 @@ def objet(snap, obj):
     return sortie
 
 
-def ligne_liste(snap, obj):
+def ligne_liste(snap, obj, vides=True, choisis=None):
     """Forme courte, pour une liste : le résumé et les champs scalaires."""
-    return {**resume(obj),
-            "champs": {nom: _valeur(obj.get(nom)) for nom in champs_scalaires(snap, obj.kind)}}
+    return {**resume(obj), "champs": champs_de(snap, obj, vides=vides, choisis=choisis)}
 
 
-def lister(snap, kind, filtre=None, limite=200, depart=0):
+# Comparaisons admises dans un filtre structuré : `{"RAM_Gb": ">=16"}`.
+_OPERATEURS = (">=", "<=", "!=", ">", "<", "=")
+
+
+def _comparer(valeur, attendu):
+    """Vrai si `valeur` (celle de l'objet) satisfait `attendu` (celle du filtre).
+
+    Une liste (rôles, applications) satisfait le filtre si l'un de ses éléments le fait ;
+    un texte est comparé sans tenir compte de la casse ; un nombre peut être comparé
+    (`>=16`) ; `null` désigne un champ vide, et `"!="` + rien un champ renseigné.
+    """
+    if isinstance(valeur, list):
+        if attendu is None:
+            return not valeur
+        return any(_comparer(v, attendu) for v in valeur)
+    if attendu is None:
+        return _vide(valeur)
+    if isinstance(attendu, bool):
+        return bool(valeur) == attendu
+    texte = str(attendu).strip()
+    operateur = next((o for o in _OPERATEURS if texte.startswith(o)), None)
+    cible = texte[len(operateur):].strip() if operateur else texte
+    if operateur in (">=", "<=", ">", "<"):
+        try:
+            a, b = float(valeur), float(cible)
+        except (TypeError, ValueError):
+            return False
+        return {">=": a >= b, "<=": a <= b, ">": a > b, "<": a < b}[operateur]
+    egal = (str(valeur).strip().lower() == cible.lower()) if not _vide(valeur) else (cible == "")
+    return not egal if operateur == "!=" else egal
+
+
+def _valeur_filtrable(snap, obj, nom):
+    """Valeur d'un champ pour un filtre : les liens se comparent par le nom de leur cible."""
+    v = obj.get(nom)
+    if isinstance(v, list) and v and isinstance(v[0], dict) and "color" not in v[0]:
+        return [x.get("value") for x in v]
+    return _valeur(v)
+
+
+def lister(snap, kind, filtre=None, limite=200, depart=0, filtres=None):
+    """Objets d'un type. `filtre` : texte cherché dans tous les champs. `filtres` :
+    {champ: valeur} où toutes les conditions doivent tenir (voir `_comparer`)."""
     objets = list(snap.by_kind.get(kind, {}).values())
     if kind == "image":
         # Comme l'écran Sécurité : seules les images en service, triées par exposition.
@@ -129,8 +209,141 @@ def lister(snap, kind, filtre=None, limite=200, depart=0):
                   if f in " ".join(str(_valeur(o.get(n)) or "")
                                    for n in champs_scalaires(snap, kind)).lower()
                   or f in o.name.lower()]
+    if filtres:
+        if not isinstance(filtres, dict):
+            raise Introuvable("`filtres` : un objet {champ: valeur} est attendu.")
+        connus = {c.nom for c in modele.table(kind).champs} | {p["nom"] for p in snap.perso.get(kind, [])}
+        inconnus = set(filtres) - connus
+        if inconnus:
+            raise Introuvable(f"champs inconnus sur {PREFIXES[kind]} : {', '.join(sorted(inconnus))}. "
+                              "`schema` les liste.")
+        objets = [o for o in objets
+                  if all(_comparer(_valeur_filtrable(snap, o, n), v) for n, v in filtres.items())]
     total = len(objets)
     return total, objets[depart:depart + limite]
+
+
+# --------------------------------------------------------------------------- contexte
+
+def _noeud_compact(snap, n, materiel=True):
+    """Un nœud en une poignée de lignes : ce qu'il est, où il tourne, ce qu'il porte."""
+    if n is None:
+        return None
+    champs = champs_de(snap, n, vides=False)
+    champs.pop("Config", None)
+    champs.pop("Last_seen", None)
+    sortie = {**resume(n), "champs": champs,
+              "adresses": [ip.name for ip in n.ips],
+              "applications": [a.name for a in n.apps]}
+    if n.containers:
+        sortie["stacks"] = sorted({c.stack.key for c in n.containers if c.stack})
+        sortie["conteneurs"] = len(n.containers)
+    if materiel:
+        cpu = n.cpu or (n.parent.cpu if n.parent and n.sel("Type") in ("VM", "LXC") else None)
+        if cpu is not None:
+            cle = "processeur" if n.cpu else "processeur_hote"
+            sortie[cle] = cpu_resume(cpu, n.num("Sockets") if n.cpu else None)
+        if n.composants:
+            sortie["composants"] = [_composant_compact(snap, c) for c in n.composants]
+        if n.devices:
+            sortie["peripheriques_attribues"] = [_composant_compact(snap, c) for c in n.devices]
+    return sortie
+
+
+def _composant_compact(snap, c):
+    champs = champs_de(snap, c, vides=False)
+    for k in ("UID", "Source", "Last_seen", "Name"):
+        champs.pop(k, None)
+    return {**resume(c), "champs": champs,
+            "attribue_a": c.assigned.name if c.assigned else None}
+
+
+def contexte(snap, obj):
+    """Tout ce qu'il faut pour raisonner sur un objet, en un seul appel.
+
+    Un agent qui dépanne ou conçoit a besoin de la chaîne entière — ce qui tourne, sur
+    quoi, avec quel matériel, au service de quoi — et non d'un objet isolé suivi de dix
+    lectures pour reconstituer ses voisins. Les voisins sont rendus en forme compacte
+    (champs renseignés seulement) ; la forme complète reste celle de `lire`.
+    """
+    sortie = {"objet": objet(snap, obj)}
+    k = obj.kind
+    if k == "node":
+        if obj.parent:
+            sortie["hote"] = _noeud_compact(snap, obj.parent)
+        sortie["materiel"] = {
+            "processeur": cpu_resume(obj.cpu, obj.num("Sockets")) if obj.cpu else (
+                {"hote": cpu_resume(obj.parent.cpu, obj.parent.num("Sockets"))}
+                if obj.parent and obj.parent.cpu else None),
+            "composants": [_composant_compact(snap, c) for c in obj.composants],
+            "peripheriques_attribues": [_composant_compact(snap, c) for c in obj.devices],
+        }
+        sortie["invites"] = [_noeud_compact(snap, g, materiel=False) for g in obj.children]
+        sortie["conteneurs"] = [ligne_liste(snap, c, vides=False) for c in obj.containers]
+        sortie["adresses"] = [ligne_liste(snap, ip, vides=False) for ip in obj.ips]
+    elif k == "container":
+        sortie["hote"] = _noeud_compact(snap, obj.host)
+        if obj.host and obj.host.parent:
+            sortie["hyperviseur"] = _noeud_compact(snap, obj.host.parent)
+        sortie["image"] = ligne_liste(snap, obj.image, vides=False) if obj.image else None
+        sortie["stack"] = stack(snap, obj.stack) if obj.stack else None
+    elif k == "application":
+        hotes = list(obj.hosts)
+        sortie["hotes"] = [_noeud_compact(snap, h) for h in hotes]
+        parents = {h.parent.id: h.parent for h in hotes if h.parent}
+        sortie["hyperviseurs"] = [_noeud_compact(snap, p) for p in parents.values()]
+        sortie["stacks"] = [stack(snap, st) for st in obj.stacks]
+    elif k == "composant":
+        sortie["hote"] = _noeud_compact(snap, obj.host)
+        sortie["attribue_a"] = _noeud_compact(snap, obj.assigned, materiel=False)
+    elif k == "cpu":
+        sortie["noeuds"] = [_noeud_compact(snap, n, materiel=False) for n in obj.nodes]
+    elif k == "ipam":
+        sortie["noeud"] = _noeud_compact(snap, obj.node)
+        sortie["vlan"] = ligne_liste(snap, obj.vlan, vides=False) if obj.vlan else None
+    elif k == "image":
+        sortie["hotes"] = [_noeud_compact(snap, h, materiel=False)
+                           for h in {c.host.id: c.host for c in obj.containers if c.host}.values()]
+    elif k == "vlan":
+        sortie["adresses"] = [ligne_liste(snap, ip, vides=False) for ip in obj.ips]
+    return sortie
+
+
+def contexte_stack(snap, st):
+    return {"stack": stack(snap, st),
+            "hote": _noeud_compact(snap, st.host),
+            "hyperviseur": _noeud_compact(snap, st.host.parent) if st.host and st.host.parent else None,
+            "conteneurs": [ligne_liste(snap, c, vides=False) for c in st.containers]}
+
+
+def capacite(snap):
+    """Par hyperviseur : le matériel, ce qui est promis aux invités, et ce qui reste.
+
+    La mémoire ne se partage pas, les cœurs si : le rapport vCPU / cœur physique dit si un
+    hôte est chargé, le rapport mémoire dit s'il peut encore accueillir quelqu'un.
+    """
+    sortie = []
+    for e in snap.hypervisor_capacity:
+        hv = e["host"]
+        sortie.append({
+            **resume(hv),
+            "processeur": cpu_resume(e["cpu"], e["sockets"]),
+            "coeurs_physiques": e["coeurs"],
+            "threads": e["vcpu_capacite"],
+            "vcpu_alloues_demarres": e["vcpu"], "vcpu_alloues_total": e["vcpu_total"],
+            "vcpu_par_coeur_physique": e["vcpu_par_coeur"],
+            "ram_go": e["ram_capacite"], "ram_allouee_demarres_go": e["ram"],
+            "ram_allouee_total_go": e["ram_total"],
+            "ram_libre_go": (e["ram_capacite"] - e["ram"]) if e["ram_capacite"] else None,
+            "ram_type": hv.sel("RAM_type"), "ram_ecc": hv.sel("RAM_ECC"),
+            "ram_max_go": hv.num("RAM_max_Gb"),
+            "disques_go": e["disques_go"],
+            "invites": e["invites"], "invites_demarres": e["demarres"],
+            "peripheriques_attribues": [
+                {"composant": c.name, "vm": c.assigned.name}
+                for c in hv.composants if c.assigned],
+        })
+    return sortie
 
 
 def stack(snap, st):
@@ -167,14 +380,25 @@ def etat(snap):
         "totaux": {"noeuds": len(snap.nodes), "conteneurs": len(snap.containers),
                    "stacks": len(snap.stacks), "images": len(snap.images),
                    "adresses": len(snap.ips), "vlan": len(snap.vlans),
-                   "applications": len(snap.apps), **snap.totals},
+                   "applications": len(snap.apps), "processeurs": len(snap.cpus),
+                   "composants": len(snap.composants), **snap.totals},
     }
 
 
-def journal(depot, type_public=None, ident=None, acteur=None, limite=50):
+def journal(depot, type_public=None, ident=None, acteur=None, limite=50, depuis=None,
+            champ=None):
     kind = kind_de(type_public) if type_public else None
+    if depuis:
+        try:
+            moment = datetime.fromisoformat(str(depuis).replace("Z", "+00:00"))
+        except ValueError:
+            raise Introuvable(f"`depuis` : date ISO 8601 attendue (« 2026-11-17 » ou "
+                              f"« 2026-11-17T08:00:00Z »), « {depuis} » reçu")
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        depuis = moment.astimezone(timezone.utc).isoformat()
     entrees = depot.journal(limite=max(1, min(limite, 500)), kind=kind, ident=ident,
-                            acteur=acteur)
+                            acteur=acteur, depuis=depuis, champ=champ)
     for e in entrees:
         tab = e.pop("tab", None)
         e["type"] = PREFIXES.get(tab) if tab else None

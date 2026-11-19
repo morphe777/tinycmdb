@@ -54,6 +54,10 @@
 <span class="nat" title="image"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l5.2 2.9v5.8L8 13.8 2.8 10.9V5.1z"/></svg></span>
 {%- elif obj.kind == 'application' -%}
 <span class="nat" title="application"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/></svg></span>
+{%- elif obj.kind == 'cpu' -%}
+<span class="nat" title="processeur"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"/></svg></span>
+{%- elif obj.kind == 'composant' -%}
+<span class="nat" title="composant"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="4" width="12" height="7" rx="1"/><path d="M4.5 11v2M7 11v2M9.5 11v2M5 6.5h3"/></svg></span>
 {%- elif t -%}
 <span class="nat" title="{{ t }}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2.5"/></svg></span>
 {%- else -%}
@@ -237,6 +241,10 @@
   <code>{{ v }}</code>
 {%- elif mode == 'long' -%}
   <span class="long">{{ v }}</span>
+{%- elif mode == 'config' -%}
+  {# Repliée : une configuration Proxmox fait trente lignes, et ce n'est pas elle qu'on
+     vient lire en premier sur la fiche. #}
+  <details class="config"><summary>{{ v.splitlines()|length }} lignes</summary><pre>{{ v }}</pre></details>
 {%- elif mode.startswith('unit:') -%}
   {{ v }} <span class="unite">{{ mode[5:] }}</span>
 {%- else -%}
@@ -418,9 +426,11 @@
 
 
 {% macro compte_rendu(n, cree=0) -%}
-{%- if cree %}
+{%- if cree and obj is defined and obj.kind == 'ipam' %}
 <p class="bandeau bandeau-ok">Ligne créée. Les champs déduits de la saisie — VLAN,
   constructeur, nom DNS — seront complétés au prochain passage du collecteur.</p>
+{%- elif cree %}
+<p class="bandeau bandeau-ok">Ligne créée.</p>
 {%- elif n > 0 %}
 <p class="bandeau bandeau-ok">{{ n }} champ{{ 's' if n > 1 }} enregistré{{ 's' if n > 1 }}.</p>
 {%- elif n == 0 %}
@@ -462,7 +472,7 @@
 {%- set prefixe = obj.url.split('/')[1] -%}
 <details class="bloc gestes">
   <summary>Gestes sur la ligne</summary>
-  {% if obj.kind in ('node', 'ipam') %}
+  {% if obj.kind in ('node', 'ipam', 'composant') %}
   <form method="post" action="/provenance/{{ prefixe }}/{{ obj.id }}" class="geste">
     {% if obj.is_manual %}
     <p>Ligne <b>saisie à la main</b> : le collecteur ne la met pas à jour et ne la supprimera
@@ -480,7 +490,7 @@
   <form method="post" action="/supprimer/{{ prefixe }}/{{ obj.id }}" class="geste geste-danger">
     <p>Supprimer <b>{{ obj.name }}</b> pour de bon. Les liens qui pointaient vers cette ligne
       sont vidés ; son contenu reste lisible dans le <a href="/admin/journal">journal</a>.
-      {% if not obj.is_manual and obj.kind in ('node', 'container', 'image', 'ipam') %}
+      {% if not obj.is_manual and obj.kind in ('node', 'container', 'image', 'ipam', 'composant') %}
       Si le collecteur la voit encore, il la recréera à son prochain passage.{% endif %}</p>
     <label class="bascule"><input type="checkbox" name="confirme" value="1" required>
       je confirme la suppression</label>

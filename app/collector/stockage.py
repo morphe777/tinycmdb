@@ -26,6 +26,13 @@ logger = logging.getLogger("cmdb.stockage")
 
 ACTEUR = "collecteur"
 
+# Champs dont le changement n'entre pas au journal. Le reste y entre : un conteneur passé à
+# « Exited », une image dont l'empreinte a changé, une VM qui a gagné de la mémoire ou dont
+# la configuration a bougé — c'est la question « qu'est-ce qui a changé depuis mardi ? »,
+# la première d'un dépannage. Ceux-ci changent à chaque passe, ou au gré de la base de
+# vulnérabilités de Trivy, et noieraient le reste.
+MUETS = frozenset({"Last_seen", "Last_scan", "IP_int", "CVE_critical", "CVE_high"})
+
 
 class Stockage:
     def __init__(self, depot):
@@ -51,8 +58,14 @@ class Stockage:
         # à la liste, où elle apparaîtra en gris dans l'administration.
         return self.depot.creer(kind, fields, acteur=ACTEUR, creer_options=True)
 
-    def update_row(self, kind, row_id, fields):
-        return self.depot.modifier(kind, row_id, fields, creer_options=True)
+    def update_row(self, kind, row_id, fields, avant=None):
+        """Met à jour une ligne. Avec `avant` — la ligne telle que l'appelant la connaît —
+        ce qui a réellement changé entre au journal sous le nom du collecteur. Sans lui,
+        rien n'y entre : c'est le cas d'un `Last_seen` seul, qui n'a rien à dire."""
+        if avant is None:
+            return self.depot.modifier(kind, row_id, fields, creer_options=True)
+        return self.depot.modifier(kind, row_id, fields, acteur=ACTEUR, creer_options=True,
+                                   avant=avant, muets=MUETS)
 
     def delete_row(self, kind, row_id):
         self.depot.supprimer(kind, row_id, acteur=ACTEUR)
@@ -105,7 +118,7 @@ class Stockage:
             payload = dict(fields)
             if last_seen_field:
                 payload[last_seen_field] = now
-            updated = self.update_row(table_id, existing["id"], payload)
+            updated = self.update_row(table_id, existing["id"], payload, avant=existing)
             cache[key_value] = updated
             return updated, False
 

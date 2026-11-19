@@ -105,6 +105,14 @@ def simple(valeur):
     return valeur
 
 
+def _libelle(kind, ligne):
+    """Ce qui désigne une ligne au journal : sa clé naturelle, sauf pour un composant, dont
+    la clé (`pve1/pci/0000:01:00`) est technique et le nom parlant."""
+    if kind == "composant" and ligne.get("Name"):
+        return ligne["Name"]
+    return ligne.get(modele.table(kind).cle)
+
+
 class _Lecture:
     """Une passe de lecture : les options et les noms des lignes visées sont lus une fois."""
 
@@ -278,7 +286,7 @@ class Depot:
     # ------------------------------------------------------------------ lecture
 
     def lire_tout(self):
-        """Les six tables, les options et les champs personnalisés, lus dans une même
+        """Les tables, les options et les champs personnalisés, lus dans une même
         transaction de lecture : un instantané cohérent, même si le collecteur écrit."""
         conn = self.conn
         conn.execute("BEGIN")
@@ -345,13 +353,17 @@ class Depot:
                 conn.execute("SELECT * FROM champ_perso WHERE tab = ?", (kind,))}
 
     def ecrire(self, kind, ident, champs, acteur=None, creer_options=False, id_impose=None,
-               verifier=True):
+               verifier=True, avant=None, muets=()):
         """Crée (`ident` None) ou met à jour une ligne. Seuls les champs présents dans
         `champs` sont touchés. Renvoie la ligne telle qu'elle est après écriture.
 
         `acteur` nomme l'auteur au journal ; sans lui, rien n'y est écrit pour une mise à
-        jour — c'est le cas des passes du collecteur, qui réécrivent `Last_seen` sur deux
-        cents lignes à chaque cycle.
+        jour. Seuls les champs dont la valeur a réellement changé y entrent, et jamais ceux
+        de `muets` : le collecteur réécrit `Last_seen` sur deux cents lignes à chaque cycle,
+        ce qui noierait les seuls changements qui comptent.
+
+        `avant` est la ligne telle que l'appelant la connaît déjà — le collecteur la tient
+        dans son cache. La fournir évite de la relire, ligne par ligne, à chaque passe.
         """
         t = modele.table(kind)
         with self.transaction() as conn:
@@ -393,7 +405,8 @@ class Depot:
                             self._verifier_cible(conn, c.cible, i, nom)
                     liens[c] = ids
 
-            avant = self.ligne(kind, ident) if (ident is not None and acteur) else None
+            if avant is None and ident is not None and acteur:
+                avant = self.ligne(kind, ident)
             if ident is not None and avant is None and acteur:
                 raise ErreurDonnee(f"aucune ligne {t.singulier} n°{ident}")
 
@@ -433,11 +446,13 @@ class Depot:
 
             apres = self.ligne(kind, ident)
             if acteur:
-                libelle = apres.get(t.cle)
+                libelle = _libelle(kind, apres)
                 if avant is None:
                     self._journaliser(conn, acteur, "création", kind, ident, libelle)
                 else:
                     for nom in champs:
+                        if nom in muets:
+                            continue
                         a, b = affichage(avant.get(nom)), affichage(apres.get(nom))
                         if a != b:
                             self._journaliser(conn, acteur, "modification", kind, ident,
@@ -448,8 +463,10 @@ class Depot:
         ligne = self.ecrire(kind, None, champs, acteur=acteur, creer_options=creer_options)
         return ligne
 
-    def modifier(self, kind, ident, champs, acteur=None, creer_options=False):
-        return self.ecrire(kind, ident, champs, acteur=acteur, creer_options=creer_options)
+    def modifier(self, kind, ident, champs, acteur=None, creer_options=False, avant=None,
+                 muets=()):
+        return self.ecrire(kind, ident, champs, acteur=acteur, creer_options=creer_options,
+                           avant=avant, muets=muets)
 
     def _ecrire_perso(self, conn, kind, ident, p, valeur, creer_options):
         if p["type"] == "multi":
@@ -504,7 +521,7 @@ class Depot:
                 # permet de la retrouver — et de la ressaisir — après une erreur.
                 contenu = {k: simple(v) for k, v in avant.items()
                            if k != "id" and v not in (None, "", [], False)}
-                self._journaliser(conn, acteur, "suppression", kind, ident, avant.get(t.cle),
+                self._journaliser(conn, acteur, "suppression", kind, ident, _libelle(kind, avant),
                                   avant=json.dumps(contenu, ensure_ascii=False, default=str))
         return avant
 
@@ -521,8 +538,15 @@ class Depot:
         with self.transaction() as conn:
             self._journaliser(conn, acteur, action, **kw)
 
-    def journal(self, limite=200, kind=None, ident=None, acteur=None, avant_id=None):
+    def journal(self, limite=200, kind=None, ident=None, acteur=None, avant_id=None,
+                depuis=None, champ=None):
         clauses, params = [], []
+        if depuis:
+            clauses.append("quand >= ?")
+            params.append(depuis)
+        if champ:
+            clauses.append("champ = ?")
+            params.append(champ)
         if kind:
             clauses.append("tab = ?")
             params.append(kind)

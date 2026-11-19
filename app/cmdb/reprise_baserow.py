@@ -28,13 +28,17 @@ from types import SimpleNamespace
 
 import requests
 
-from . import modele
+from . import db, modele
 from .depot import Depot
 
 logger = logging.getLogger("cmdb.reprise")
 
 ENV_TABLES = {"node": "TABLE_NODE", "container": "TABLE_CONTAINER", "image": "TABLE_IMAGES",
               "ipam": "TABLE_IPAM", "vlan": "TABLE_VLAN", "application": "TABLE_APPLICATION"}
+
+# Les tables que Baserow connaissait, dans l'ordre d'écriture. Processeurs et composants
+# sont nés après lui (migration 002) : une reprise les vide, elle ne les remplit pas.
+ORDRE_BASEROW = tuple(k for k in modele.ORDRE if k in ENV_TABLES)
 
 
 class Baserow:
@@ -124,7 +128,14 @@ def importer(depot, champs, lignes, remplacer=False):
                                  (o["id"], kind, c.nom, o["value"], o.get("color") or "gray", ordre))
                     n_options += 1
 
-        for kind in modele.ORDRE:
+        # Les options des champs nés après Baserow ont disparu avec les autres : elles
+        # reviennent telles que la migration qui les a créées les pose.
+        for instruction in db._instructions(
+                (db.MIGRATIONS / "002_materiel.sql").read_text(encoding="utf-8")):
+            if instruction.startswith("INSERT OR IGNORE INTO option"):
+                conn.execute(instruction)
+
+        for kind in ORDRE_BASEROW:
             t = modele.table(kind)
             for ligne in sorted(lignes[kind], key=lambda r: r["id"]):
                 valeurs = {c.nom: _valeur_reprise(c, ligne.get(c.nom))
@@ -132,10 +143,10 @@ def importer(depot, champs, lignes, remplacer=False):
                 depot.ecrire(kind, None, valeurs, id_impose=ligne["id"], verifier=False,
                              creer_options=False)
         depot._journaliser(conn, "reprise", "reprise Baserow", libelle=", ".join(
-            f"{len(lignes[k])} {modele.table(k).libelle.lower()}" for k in modele.ORDRE)
+            f"{len(lignes[k])} {modele.table(k).libelle.lower()}" for k in ORDRE_BASEROW)
             + f", {n_options} options")
     logger.info("Reprise écrite : %d options, %s", n_options,
-                ", ".join(f"{len(lignes[k])} {k}" for k in modele.ORDRE))
+                ", ".join(f"{len(lignes[k])} {k}" for k in ORDRE_BASEROW))
 
 
 # --------------------------------------------------------------------------- vérification
@@ -191,7 +202,7 @@ def verifier(depot, champs, lignes):
     sqlite_lignes, options, _ = depot.lire_tout()
     ecarts = []
 
-    for kind in modele.ORDRE:
+    for kind in ORDRE_BASEROW:
         t = modele.table(kind)
         avant = {r["id"]: r for r in lignes[kind]}
         apres = {r["id"]: r for r in sqlite_lignes[kind]}

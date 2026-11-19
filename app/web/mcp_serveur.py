@@ -31,16 +31,23 @@ logger = logging.getLogger("cmdb.web.mcp")
 _jeton = contextvars.ContextVar("jeton_mcp", default=None)
 
 INSTRUCTIONS = """TinyCMDB est l'inventaire d'infrastructure : nœuds (machines physiques, VM, LXC, \
-équipements), conteneurs et stacks Docker, images et leurs CVE, adresses IP, VLAN, \
-applications au sens métier, et les liens entre eux.
+équipements), leur matériel (processeur, carte mère, mémoire, cartes PCIe, disques, \
+périphériques USB et la VM qui les reçoit), la configuration Proxmox de chaque invité, \
+conteneurs et stacks Docker, images et leurs CVE, adresses IP, VLAN, applications au sens \
+métier, et les liens entre eux.
 
 Commence par l'outil `guide` si tu n'as jamais utilisé ce serveur : il explique le modèle, \
 la règle de provenance des champs et le format des écritures.
 
-L'essentiel : `rechercher` pour trouver, `lire` pour comprendre (champs, provenance, liens, \
-et la liste `modifiables`), `modifier` / `creer` pour écrire. Seuls les champs listés dans \
-`modifiables` s'écrivent — les autres sont réécrits par le collecteur. Les options de liste \
-admises sont dans `schema`. Rien ne se supprime par ce serveur."""
+L'essentiel : `rechercher` pour trouver, `contexte` pour comprendre un objet et tout son \
+voisinage en un appel (hôte, matériel, invités, applications), `lire` pour le détail d'un \
+objet et la liste `modifiables`, `lister` avec `filtres` pour interroger le parc \
+(« les machines arm64 », « les disques d'usure >= 50 »), `capacite` pour la place qui reste \
+sur les hyperviseurs, `journal(depuis=…)` pour ce qui a changé. `modifier` / `creer` pour \
+écrire : seuls les champs listés dans `modifiables` s'écrivent — les autres sont réécrits \
+par le collecteur. Les caractéristiques d'un modèle de processeur (type `cpu`) se \
+saisissent une fois et servent ensuite à toutes les machines qui le portent : si tu les \
+connais et qu'elles manquent, propose de les compléter. Rien ne se supprime par ce serveur."""
 
 LECTURE = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 ECRITURE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
@@ -92,7 +99,7 @@ def creer(data, redacteur):
     def schema(type: str | None = None) -> dict:
         """Tables et champs : nom exact, type, provenance possible (auto / enrichi / manuel)
         et, pour les listes, les options admises. `type` limite la réponse à un type :
-        noeud, conteneur, image, ip, vlan ou application."""
+        noeud, conteneur, image, ip, vlan, application, cpu ou composant."""
         _courant()
         try:
             return exposition.schema_public(snap(), type)
@@ -102,26 +109,66 @@ def creer(data, redacteur):
     @serveur.tool(annotations=LECTURE)
     def rechercher(texte: str) -> dict:
         """Recherche dans tout l'inventaire : nom, IP, MAC, FQDN, OS, ports, stack, chemin
-        de compose, image, rôle… Renvoie au plus 60 références {type, id, nom}."""
+        de compose, image, rôle, processeur, carte mère, composant (modèle, chipset, numéro
+        de série)… Renvoie au plus 60 références {type, id, nom}."""
         _courant()
         if len((texte or "").strip()) < 2:
             raise ToolError("Deux caractères au moins.")
         return {"resultats": [exposition.resume(o) for o in snap().search(texte)]}
 
     @serveur.tool(annotations=LECTURE)
-    def lister(type: str, filtre: str | None = None, limite: int = 50, depart: int = 0) -> dict:
-        """Liste les objets d'un type (noeud, conteneur, image, ip, vlan, application), avec
-        leurs champs. `filtre` restreint aux objets dont un champ contient ce texte.
-        Pagination par `limite` (200 au plus) et `depart`."""
+    def lister(type: str, filtre: str | None = None, filtres: dict | None = None,
+               champs: list[str] | None = None, vides: bool = False, limite: int = 50,
+               depart: int = 0) -> dict:
+        """Liste les objets d'un type (noeud, conteneur, image, ip, vlan, application, cpu,
+        composant), avec leurs champs.
+
+        `filtre` : texte cherché dans tous les champs. `filtres` : conditions exactes, toutes
+        requises — {"Arch": "arm64"}, {"RAM_Gb": ">=16"}, {"Category": "Disk",
+        "Wearout": ">=50"}, {"Host": "pve1"} (un lien se compare par le nom de sa cible),
+        {"Motherboard": null} (champ vide), {"BIOS": "!="} (champ renseigné). Opérateurs :
+        >=, <=, >, <, !=. `champs` : ne rendre que ces champs. `vides` : rendre aussi les
+        champs vides (faux par défaut). Pagination par `limite` (200 au plus) et `depart`."""
         _courant()
         try:
             kind = exposition.kind_de(type)
+            s = snap()
+            total, objets = exposition.lister(s, kind, filtre, max(1, min(limite, 200)),
+                                              max(0, depart), filtres)
         except exposition.Introuvable as exc:
             raise ToolError(str(exc))
-        s = snap()
-        total, objets = exposition.lister(s, kind, filtre, max(1, min(limite, 200)), max(0, depart))
         return {"total": total, "depart": depart,
-                "objets": [exposition.ligne_liste(s, o) for o in objets]}
+                "objets": [exposition.ligne_liste(s, o, vides=vides, choisis=champs)
+                           for o in objets]}
+
+    @serveur.tool(annotations=LECTURE)
+    def contexte(type: str, id: int | None = None, cle: str | None = None) -> dict:
+        """Un objet et tout son voisinage en un seul appel : pour un nœud, son hôte, son
+        processeur et ses caractéristiques, ses composants et ceux qui lui sont attribués,
+        ses invités, conteneurs et adresses ; pour un conteneur ou une application, la
+        chaîne hôte → hyperviseur → matériel. À préférer à une suite de `lire` dès qu'il
+        s'agit de raisonner (dépannage, conception). `type` + `id`, ou `type="stack"` +
+        `cle` (« hôte/nom »)."""
+        _courant()
+        if type == "stack":
+            s = snap()
+            st = s.stacks_by_key.get(cle or "")
+            if st is None:
+                raise ToolError(f"stack {cle} introuvable. `stacks` les liste toutes.")
+            return exposition.contexte_stack(s, st)
+        if id is None:
+            raise ToolError("`id` est requis (ou `type=\"stack\"` avec `cle`).")
+        s, obj = _objet(type, id)
+        return exposition.contexte(s, obj)
+
+    @serveur.tool(annotations=LECTURE)
+    def capacite() -> dict:
+        """Par hyperviseur : processeur et cœurs physiques, mémoire (type, ECC, maximum),
+        disques, et ce qui est promis aux invités — vCPU par cœur physique, mémoire allouée
+        et libre — avec les périphériques passés à des VM. Pour décider où placer une
+        nouvelle machine."""
+        _courant()
+        return {"hyperviseurs": exposition.capacite(snap())}
 
     @serveur.tool(annotations=LECTURE)
     def lire(type: str, id: int) -> dict:
@@ -173,13 +220,19 @@ def creer(data, redacteur):
 
     @serveur.tool(annotations=LECTURE)
     def journal(type: str | None = None, id: int | None = None, acteur: str | None = None,
+                depuis: str | None = None, champ: str | None = None,
                 limite: int = 50) -> dict:
-        """Historique des écritures (interface, API, MCP, créations et suppressions du
-        collecteur), du plus récent au plus ancien. Filtrable par objet et par acteur
-        (`interface`, `collecteur`, `api:<jeton>`, `mcp:<jeton>` ; une partie du nom suffit)."""
+        """Historique, du plus récent au plus ancien : écritures de l'interface, de l'API et
+        du MCP, et ce que le collecteur a constaté — créations, suppressions, et chaque
+        champ qui a changé (un conteneur passé à Exited, une image mise à jour, une VM dont
+        la mémoire ou la configuration a bougé). C'est la question « qu'est-ce qui a changé
+        depuis… » d'un dépannage : `depuis` (date ISO 8601) borne la période. Filtrable par
+        objet, par champ et par acteur (`interface`, `collecteur`, `api:<jeton>`,
+        `mcp:<jeton>` ; une partie du nom suffit)."""
         _courant()
         try:
-            return {"entrees": exposition.journal(data.depot, type, id, acteur, limite)}
+            return {"entrees": exposition.journal(data.depot, type, id, acteur, limite,
+                                                  depuis, champ)}
         except exposition.Introuvable as exc:
             raise ToolError(str(exc))
 
@@ -200,8 +253,10 @@ def creer(data, redacteur):
     @serveur.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
                                               idempotentHint=False, openWorldHint=False))
     def creer(type: str, champs: dict) -> dict:
-        """Crée un nœud, une adresse IP, un VLAN ou une application. La clé naturelle est
-        obligatoire (Name, Address ou name). La ligne est marquée saisie manuelle : le
+        """Crée un nœud, une adresse IP, un VLAN, une application, un processeur (`cpu`,
+        un modèle du référentiel) ou un composant (une carte, un disque, un périphérique
+        d'une machine que Proxmox ne voit pas — `Host` désigne la machine). La clé naturelle
+        est obligatoire (Name, Address ou name). La ligne est marquée saisie manuelle : le
         collecteur ne la touchera pas. Renvoie l'objet créé."""
         jeton = _courant("ecriture")
         try:

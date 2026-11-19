@@ -47,6 +47,7 @@
   <nav id="menu-principal">
     <a href="/" class="{{ 'actif' if request.url.path == '/' }}">Tableau de bord</a>
     <a href="/infra" class="{{ 'actif' if request.url.path.startswith('/infra') }}">Infrastructure</a>
+    <a href="/materiel" class="{{ 'actif' if request.url.path.startswith(('/materiel', '/cpu/', '/composant/')) }}">Matériel</a>
     <a href="/stacks" class="{{ 'actif' if request.url.path.startswith('/stack') }}">Stacks</a>
     <a href="/securite" class="{{ 'actif' if request.url.path.startswith('/securite') }}">Sécurité</a>
     <a href="/applications" class="{{ 'actif' if request.url.path.startswith('/application') }}">Applications</a>

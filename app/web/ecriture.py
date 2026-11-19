@@ -30,6 +30,7 @@ passe suivante.
 import ipaddress
 import logging
 import re
+import secrets
 from collections import namedtuple
 
 from cmdb.depot import ErreurDonnee
@@ -88,6 +89,20 @@ CHAMPS = {
         ("Criticality", "select"),
         ("Application", "lien:application"),
         ("notes", "long"),
+        ("Arch", "select"),
+        ("CPU", "lien1:cpu"),
+        ("Sockets", "entier"),
+        ("CPU_type", "texte"),
+        ("CPU_level", "select"),
+        ("Machine", "texte"),
+        ("Kernel", "texte"),
+        ("Motherboard", "texte"),
+        ("BIOS", "texte"),
+        ("RAM_type", "select"),
+        ("RAM_ECC", "select"),
+        ("RAM_MHz", "entier"),
+        ("RAM_modules", "texte"),
+        ("RAM_max_Gb", "entier"),
     ],
     "container": [
         ("Application - Stack", "lien:application"),
@@ -125,7 +140,62 @@ CHAMPS = {
         ("dns", "texte"),
         ("notes", "long"),
     ],
+    "cpu": [
+        ("Name", "texte"),
+        ("Vendor", "select"),
+        ("Arch", "select"),
+        ("Generation", "texte"),
+        ("Cores", "entier"),
+        ("Threads", "entier"),
+        ("Base_MHz", "entier"),
+        ("Boost_MHz", "entier"),
+        ("TDP_W", "entier"),
+        ("L3_MB", "entier"),
+        ("x86_level", "select"),
+        ("iGPU", "texte"),
+        ("Virtualization", "texte"),
+        ("Max_RAM_Gb", "entier"),
+        ("Doc", "url"),
+        ("Notes", "long"),
+    ],
+    "composant": [
+        ("Name", "texte"),
+        ("Category", "select"),
+        ("Bus", "select"),
+        ("Host", "lien1:node"),
+        ("Assigned_to", "lien1:node"),
+        ("Vendor", "texte"),
+        ("Model", "texte"),
+        ("Reference", "texte"),
+        ("Chipset", "texte"),
+        ("Address", "texte"),
+        ("Serial", "texte"),
+        ("Ports", "entier"),
+        ("Speed_Mbps", "entier"),
+        ("Capacity_Gb", "entier"),
+        ("Standard", "select"),
+        ("Firmware", "texte"),
+        ("Doc", "url"),
+        ("Notes", "long"),
+    ],
 }
+
+# Champs du nœud qui n'ont de sens que pour une machine réelle, ou que pour un invité.
+# Ni affichés ni proposés à la saisie ailleurs : la carte mère d'un LXC ou la configuration
+# Proxmox d'une caméra ne sont pas des champs vides, ce sont des questions sans objet.
+PHYSIQUE_SEULEMENT = {"CPU", "Sockets", "Kernel", "Motherboard", "BIOS", "RAM_type", "RAM_ECC",
+                      "RAM_MHz", "RAM_modules", "RAM_max_Gb"}
+INVITE_SEULEMENT = {"CPU_type", "Config"}
+TYPES_VIRTUELS = ("VM", "LXC")
+
+
+def applicable(obj, champ):
+    if obj.kind != "node":
+        return True
+    virtuel = obj.sel("Type") in TYPES_VIRTUELS
+    if virtuel:
+        return champ not in PHYSIQUE_SEULEMENT
+    return champ not in INVITE_SEULEMENT
 
 # Libellés de saisie. Le nom du champ est exact mais parfois sec : `notes` en minuscules sur
 # une table et `Notes` sur une autre, `vmid`, `RAM_Gb`. La fiche en consultation affiche le
@@ -141,6 +211,21 @@ LIBELLES = {
     "Capability": "Fonctions", "URL": "URL", "URL 2": "URL secondaire", "Doc": "Documentation",
     "vlan_id": "Identifiant 802.1Q", "subnet": "Sous-réseau", "gateway": "Passerelle",
     "zone": "Zone", "dhcp": "DHCP", "dhcp_range": "Plage DHCP", "dns": "DNS",
+    "Arch": "Architecture", "CPU": "Processeur", "Sockets": "Sockets",
+    "CPU_type": "Type de processeur (VM)", "CPU_level": "Niveau x86-64", "Machine": "Machine",
+    "Kernel": "Noyau", "Motherboard": "Carte mère", "BIOS": "BIOS / UEFI",
+    "RAM_type": "Type de mémoire", "RAM_ECC": "ECC", "RAM_MHz": "Fréquence mémoire (MHz)",
+    "RAM_modules": "Barrettes", "RAM_max_Gb": "Mémoire maximale (Go)",
+    "Vendor": "Marque", "Generation": "Génération", "Cores": "Cœurs", "Threads": "Threads",
+    "Base_MHz": "Fréquence de base (MHz)", "Boost_MHz": "Fréquence turbo (MHz)",
+    "TDP_W": "TDP (W)", "L3_MB": "Cache L3 (Mo)", "x86_level": "Niveau x86-64",
+    "iGPU": "Graphique intégré", "Virtualization": "Virtualisation",
+    "Max_RAM_Gb": "Mémoire maximale supportée (Go)",
+    "Category": "Catégorie", "Bus": "Bus", "Host": "Installé dans",
+    "Assigned_to": "Attribué à (passthrough)", "Model": "Modèle", "Reference": "Référence",
+    "Chipset": "Chipset", "Serial": "Numéro de série", "Ports": "Ports",
+    "Speed_Mbps": "Vitesse (Mbit/s)", "Capacity_Gb": "Capacité (Go)", "Standard": "Norme",
+    "Firmware": "Micrologiciel",
 }
 
 # Précisions affichées sous un champ, là où la saisie a une conséquence non évidente.
@@ -149,6 +234,14 @@ NOTICES = {
     ("ipam", "Address"): "Modifier l'adresse d'une ligne manuelle revient à déclarer un autre équipement.",
     ("container", "Application - Stack"): "Rattachement métier : c'est lui qui donne un sens aux vulnérabilités de l'image.",
     ("node", "Application"): "Pour un équipement qui rend un service sans passer par un conteneur.",
+    ("node", "CPU"): "Le modèle, dans le référentiel des processeurs : ses caractéristiques s'y saisissent une fois pour toutes les machines qui le portent.",
+    ("node", "RAM_modules"): "Nombre, taille et format des barrettes, et emplacements libres : « 2 × 16 Go SO-DIMM, 2/2 occupés ».",
+    ("node", "BIOS"): "Version et date : c'est la première chose qu'on demande devant un problème matériel.",
+    ("cpu", "Name"): "Le modèle tel que la machine le nomme, sans les (R) et (TM).",
+    ("cpu", "Boost_MHz"): "Fréquence maximale sur un cœur.",
+    ("composant", "Speed_Mbps"): "En Mbit/s : 2500 pour 2,5 Gb/s, 10000 pour 10 Gb/s.",
+    ("composant", "Capacity_Gb"): "En Go décimaux, ceux de l'étiquette : un disque de 1 To vaut 1000.",
+    ("composant", "Assigned_to"): "La VM qui reçoit ce périphérique en passthrough, s'il y en a une.",
 }
 
 # Certaines précisions n'ont de sens qu'à la modification : prévenir qu'on change
@@ -160,9 +253,19 @@ NOTICES_CREATION = {
     ("node", "Name"): "Ce que le réseau en dit : le nom d'hôte, pas l'étiquette collée dessus.",
     ("node", "Type"): "Physical pour un équipement réel. VM et LXC appartiennent au collecteur.",
     ("node", "Roles"): "À quoi il sert. Ne pas poser « docker » ici : ce rôle déclenche une interrogation du socket-proxy, qui n'existe pas sur un portable.",
+    ("cpu", "Name"): "Le modèle exact, sans les (R) et (TM) : « Intel Core i5-8500T », « Broadcom BCM2711 ».",
+    ("composant", "Name"): "Ce qui le désigne pour toi : « Carte 4 × 2,5 GbE », « Clé Zigbee ».",
+    ("composant", "Host"): "La machine dans laquelle il est installé ou branché.",
 }
 
-LIENS = {"lien:node": "node", "lien:application": "application", "lien1:node": "node"}
+LIENS = {"lien:node": "node", "lien:application": "application", "lien1:node": "node",
+         "lien1:cpu": "cpu"}
+
+
+def _simple(widget):
+    """Lien vers une seule ligne (`lien1:…`) : un sélecteur, pas une liste à cocher."""
+    return widget.startswith("lien1:")
+
 
 # Tables où la console sait créer une ligne. Les deux autres sont alimentées par le
 # collecteur (Container, Images), et lui seul sait ce qu'elles doivent contenir.
@@ -170,7 +273,7 @@ LIENS = {"lien:node": "node", "lien:application": "application", "lien1:node": "
 # Node y figure pour ce que Proxmox ne peut pas voir : un portable, une imprimante, une
 # caméra, un NAS. Sans cela, la moitié du parc réel n'a aucun moyen d'entrer dans la CMDB,
 # et l'IPAM renvoie des adresses rattachées à rien.
-CREABLES = ("ipam", "application", "node", "vlan")
+CREABLES = ("ipam", "application", "node", "vlan", "cpu", "composant")
 
 # Widget de saisie d'un champ personnalisé, par type.
 WIDGET_PERSO = {"texte": "texte", "long": "long", "url": "url", "entier": "entier",
@@ -197,14 +300,27 @@ def aide_perso(snap, kind, champ):
 # protège la saisie : sans `Manual`, le collecteur supprimerait cette adresse dès qu'il
 # constaterait ne pas la voir sur le réseau. Elle n'est pas proposée au formulaire — c'est
 # une conséquence du geste, pas une option.
-SOURCE_CREATION = {"ipam": "Manual", "node": "Manual"}
+SOURCE_CREATION = {"ipam": "Manual", "node": "Manual", "composant": "Manual"}
 
 # Champ portant le nom, par table : sert au contrôle de doublon et au message qui
 # l'accompagne.
-CLE_NATURELLE = {"ipam": "Address", "application": "Name", "node": "Name", "vlan": "name"}
+CLE_NATURELLE = {"ipam": "Address", "application": "Name", "node": "Name", "vlan": "name",
+                 "cpu": "Name", "composant": "Name"}
+
+# Tables où le nom saisi n'a pas à être unique : deux barrettes, deux disques du même modèle
+# sont deux lignes. Leur clé technique (`UID`) est posée par la console.
+NOMS_LIBRES = ("composant",)
 
 
-def formulaire_creation(snap, kind):
+# Champs du nœud laissés hors de la fenêtre de création de la console : on déclare d'abord
+# un équipement, on le décrit ensuite depuis sa fiche. L'API et le MCP, eux, acceptent tout
+# en une fois — un agent qui vient d'identifier une machine n'a pas à s'y prendre à deux fois.
+DETAIL_CREATION = {"node": {"Arch", "CPU", "Sockets", "CPU_type", "CPU_level", "Machine",
+                            "Kernel", "Motherboard", "BIOS", "RAM_type", "RAM_ECC", "RAM_MHz",
+                            "RAM_modules", "RAM_max_Gb"}}
+
+
+def formulaire_creation(snap, kind, essentiels=False):
     """Champs d'un formulaire de création.
 
     Rigoureusement les mêmes règles qu'en modification, appliquées à la ligne *telle
@@ -214,16 +330,17 @@ def formulaire_creation(snap, kind):
     de provenance en consultation, le formulaire de modification, celui-ci.
     """
     source = SOURCE_CREATION.get(kind)
+    exclus = DETAIL_CREATION.get(kind, set()) if essentiels else set()
     champs = []
     for champ, widget in champs_de(snap, kind):
-        if not schema.editable(kind, champ, source):
+        if not schema.editable(kind, champ, source) or champ in exclus:
             continue
         champs.append({
             "champ": champ,
             "widget": widget,
             "libelle": LIBELLES.get(champ, champ),
             "notice": NOTICES_CREATION.get((kind, champ)) or aide_perso(snap, kind, champ),
-            "valeur": [] if (widget == "multi" or widget in LIENS and widget != "lien1:node")
+            "valeur": [] if (widget == "multi" or widget in LIENS and not _simple(widget))
                       else (False if widget == "bool" else None),
             "options": options(snap, kind, champ) if widget in ("select", "multi") else [],
             "cibles": cibles(snap, LIENS[widget]) if widget in LIENS else [],
@@ -256,7 +373,7 @@ def formulaire(snap, obj):
     """
     champs = []
     for champ, widget in champs_de(snap, obj.kind):
-        if not schema.editable(obj.kind, champ, obj.source):
+        if not schema.editable(obj.kind, champ, obj.source) or not applicable(obj, champ):
             continue
         champs.append({
             "champ": champ,
@@ -285,7 +402,7 @@ def saisie_brute(snap, descripteurs, donnees):
         clef = f"champ.{champ}"
         if widget == "multi":
             saisie[champ] = [v for v in donnees.getlist(clef) if v]
-        elif widget == "lien1:node":
+        elif _simple(widget):
             try:
                 saisie[champ] = int(donnees.get(clef) or 0) or None
             except (TypeError, ValueError):
@@ -313,7 +430,7 @@ def _actuel(obj, champ, widget):
     """Valeur actuelle, dans la forme que le formulaire renvoie — donc comparable."""
     if widget == "multi":
         return sorted(obj.multi(champ))
-    if widget == "lien1:node":
+    if _simple(widget):
         liens = [v["id"] for v in (obj.get(champ) or []) if isinstance(v, dict) and "id" in v]
         return liens[0] if liens else None
     if widget in LIENS:
@@ -337,7 +454,7 @@ def _valider(snap, kind, champ, widget, brut, multiples):
     if widget == "bool":
         return brut is not None
 
-    if widget == "lien1:node":
+    if _simple(widget):
         texte = (brut or "").strip()
         if not texte:
             return None
@@ -345,7 +462,7 @@ def _valider(snap, kind, champ, widget, brut, multiples):
             ident = int(texte)
         except ValueError:
             raise EcritureRefusee(f"{libelle} : référence invalide")
-        if ident not in snap.by_kind.get("node", {}):
+        if ident not in snap.by_kind.get(LIENS[widget], {}):
             raise EcritureRefusee(f"{libelle} : référence inconnue ({ident})")
         return ident
 
@@ -427,7 +544,7 @@ def _valider(snap, kind, champ, widget, brut, multiples):
 
 def _payload(widget, valeur):
     """Forme attendue par la base pour effacer ou poser la valeur."""
-    if widget == "lien1:node":
+    if _simple(widget):
         return [valeur] if valeur else []
     return valeur
 
@@ -450,7 +567,7 @@ def _lire(snap, kind, descripteurs, donnees):
         if champ not in portee:
             continue
         clef = f"champ.{champ}"
-        if widget == "multi" or (widget in LIENS and widget != "lien1:node"):
+        if widget == "multi" or (widget in LIENS and not _simple(widget)):
             brut, multiples = None, donnees.getlist(clef)
         else:
             brut, multiples = donnees.get(clef), []
@@ -483,6 +600,11 @@ def _derives(snap, kind, valeurs):
     source = SOURCE_CREATION.get(kind)
     if source:
         forces["Source"] = source
+    if kind == "composant":
+        # Clé technique d'un composant saisi : unique, stable, sans prétention à dire quoi
+        # que ce soit. Celles du collecteur (`hôte/pci/…`, `disk/<série>`) ne peuvent pas
+        # la rencontrer.
+        forces["UID"] = "manuel/" + secrets.token_hex(6)
     if kind == "ipam" and valeurs.get("Address"):
         adresse = ipaddress.ip_address(valeurs["Address"])
         forces["IP_int"] = int(adresse)
@@ -587,7 +709,7 @@ class Redacteur:
         cle = CLE_NATURELLE[kind]
         if not valeurs.get(cle):
             raise EcritureRefusee(f"{LIBELLES.get(cle, cle)} : ce champ est obligatoire.")
-        existant = _doublon(snap, kind, cle, valeurs[cle])
+        existant = None if kind in NOMS_LIBRES else _doublon(snap, kind, cle, valeurs[cle])
         if existant is not None:
             raise EcritureRefusee(
                 f"« {valeurs[cle]} » figure déjà dans l'inventaire. Modifier la ligne "
@@ -620,8 +742,9 @@ class Redacteur:
         plus) ; Auto la lui rend. C'est le geste qu'on faisait dans Baserow en changeant
         la colonne Source.
         """
-        if obj.kind not in ("node", "ipam"):
-            raise EcritureRefusee("Seuls les nœuds et les adresses portent une provenance.")
+        if obj.kind not in ("node", "ipam", "composant"):
+            raise EcritureRefusee("Seuls les nœuds, les adresses et les composants portent "
+                                  "une provenance.")
         nouvelle = "Auto" if obj.is_manual else "Manual"
         self._ecrire(obj.kind, obj.id, {"Source": nouvelle}, acteur)
         return nouvelle

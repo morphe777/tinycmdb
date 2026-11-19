@@ -13,10 +13,18 @@ Trois provenances, et non deux :
               le collecteur en déduit le VLAN, le constructeur, le FQDN, le hostname.
 - MANUEL    : jamais touché par le collecteur, dans aucun cas.
 
-Les lignes `Source = Manual` des tables Nœud et IPAM sont protégées intégralement (le
-collecteur ne les met pas à jour et ne les supprime jamais), à l'exception des champs
-ENRICHI ci-dessus. Container, Images et VLAN n'ont pas de champ `Source` : les deux
-premières sont intégralement automatiques, la dernière intégralement manuelle.
+Les lignes `Source = Manual` des tables Nœud, IPAM et Composant sont protégées
+intégralement (le collecteur ne les met pas à jour et ne les supprime jamais), à
+l'exception des champs ENRICHI ci-dessus. Container, Images, VLAN et Processeur n'ont pas
+de champ `Source` : les deux premières sont intégralement automatiques, les deux autres
+intégralement manuelles — le collecteur crée une ligne Processeur quand il rencontre un
+modèle inconnu, avec ce que la machine dit d'elle-même, et n'y revient plus jamais.
+
+Un champ peut être *amorcé* par le collecteur puis rester à toi : posé à la création de la
+ligne, jamais réécrit ensuite (`create_only_fields` dans `collector/stockage.py`). C'est le
+cas du nom, de la catégorie, de la marque et du modèle d'un composant — Proxmox les devine
+d'après les identifiants PCI, mal parfois, et la correction doit tenir. Ces champs sont
+MANUEL : la règle ne parle que de ce qui survit au passage suivant.
 
 Ce module est la seule source de vérité sur le sujet. Toute évolution du collecteur qui
 change ce qu'il écrit doit se refléter ici, sinon la console ment — ce qui serait pire
@@ -45,6 +53,15 @@ _NODE = {
     # Liens posés par les autres passes (côté Container et IPAM), pas éditables ici.
     "Container": AUTO, "IPAM": AUTO,
     "Roles": MANUEL, "Criticality": MANUEL, "notes": MANUEL, "Application": MANUEL,
+    # Matériel et configuration relevés sur l'hyperviseur ou dans la configuration Proxmox
+    # de l'invité. Tous ne sont pas posés sur toutes les lignes (pas de `Config` sur un
+    # hyperviseur, pas de `CPU` sur une VM) : ceux-là restent vides, jamais à saisir.
+    "Arch": AUTO, "CPU": AUTO, "Sockets": AUTO, "CPU_type": AUTO, "CPU_level": AUTO,
+    "Machine": AUTO, "Kernel": AUTO, "Config": AUTO,
+    "Components": AUTO, "Devices": AUTO,
+    # Ce qu'aucune API ne montre sans droits root : à saisir, même sur un hyperviseur.
+    "Motherboard": MANUEL, "BIOS": MANUEL, "RAM_type": MANUEL, "RAM_ECC": MANUEL,
+    "RAM_MHz": MANUEL, "RAM_modules": MANUEL, "RAM_max_Gb": MANUEL,
 }
 
 _CONTAINER = {
@@ -77,8 +94,21 @@ _IPAM_MANUAL_ROW = {
     "Hostname": ENRICHI, "Last_seen": ENRICHI,
 }
 
+# Un composant découvert : ce que Proxmox mesure est AUTO, ce qu'il devine est amorcé à la
+# création puis laissé à la main (voir plus haut), le reste n'est connu que de toi.
+_COMPOSANT = {
+    "UID": AUTO, "Bus": AUTO, "Host": AUTO, "Assigned_to": AUTO, "Chipset": AUTO,
+    "Address": AUTO, "IOMMU_group": AUTO, "Serial": AUTO, "Capacity_Gb": AUTO,
+    "Usage": AUTO, "Health": AUTO, "Wearout": AUTO, "Source": AUTO, "Last_seen": AUTO,
+    "Name": MANUEL, "Category": MANUEL, "Vendor": MANUEL, "Model": MANUEL,
+    "Reference": MANUEL, "Ports": MANUEL, "Speed_Mbps": MANUEL, "Standard": MANUEL,
+    "Firmware": MANUEL, "Doc": MANUEL, "Notes": MANUEL,
+}
+
 _BY_TABLE = {
     "node": _NODE,
+    "composant": _COMPOSANT,
+    "cpu": {},           # référentiel manuel ; le collecteur n'y fait qu'amorcer une ligne
     "container": _CONTAINER,
     "image": _IMAGE,
     "application": {},   # 100 % manuelle, par décision explicite
@@ -92,7 +122,7 @@ def origin(table, field, source=None):
     if table == "ipam":
         mapping = _IPAM_MANUAL_ROW if (source or "").lower() == "manual" else _IPAM_AUTO_ROW
         return mapping.get(field, MANUEL)
-    if table == "node" and (source or "").lower() == "manual":
+    if table in ("node", "composant") and (source or "").lower() == "manual":
         # Une ligne manuelle est protégée intégralement : le collecteur ne la met pas à
         # jour et ne la supprime pas. Tout y est donc à toi, y compris Type et Status —
         # c'est le cas des 23 appliances, caméras et équipements IoT.

@@ -4,7 +4,21 @@
 {% block titre %}{{ obj.name }}{% endblock %}
 
 {% set libelles = {'node': 'Nœud', 'container': 'Conteneur', 'image': 'Image',
-                   'ipam': 'Adresse', 'application': 'Application', 'vlan': 'VLAN'} %}
+                   'ipam': 'Adresse', 'application': 'Application', 'vlan': 'VLAN',
+                   'cpu': 'Processeur', 'composant': 'Composant'} %}
+
+{# Résumé d'un modèle de processeur, sur la fiche d'une machine qui le porte : ce qu'on
+   vient y chercher, sans avoir à ouvrir le référentiel. #}
+{% macro resume_cpu(c, sockets=1) -%}
+{{ m.lien_ref(c) }}
+{%- set traits = [] -%}
+{%- if sockets and sockets > 1 %}{% if traits.append(sockets ~ ' sockets') %}{% endif %}{% endif -%}
+{%- if c.get('Cores') %}{% if traits.append(c.get('Cores') ~ ' cœurs / ' ~ (c.get('Threads') or '?') ~ ' threads') %}{% endif %}{% endif -%}
+{%- if c.get('Base_MHz') or c.get('Boost_MHz') %}{% if traits.append((c.get('Base_MHz') or '?') ~ ' → ' ~ (c.get('Boost_MHz') or '?') ~ ' MHz') %}{% endif %}{% endif -%}
+{%- if c.get('TDP_W') %}{% if traits.append(c.get('TDP_W') ~ ' W') %}{% endif %}{% endif -%}
+{%- if c.sel('x86_level') %}{% if traits.append(c.sel('x86_level')) %}{% endif %}{% endif -%}
+{%- if traits %} <span class="vide">{{ traits|join(' · ') }}</span>{% endif -%}
+{%- endmacro %}
 
 {#
   Une ligne de liens n'est rendue que si elle a quelque chose à dire. Afficher
@@ -74,6 +88,16 @@
           {% elif obj.kind == 'application' %}
           <p>La table Application n'est jamais écrite par le collecteur : une application
             est un regroupement décidé, pas un fait technique observable.</p>
+          {% elif obj.kind == 'cpu' %}
+          <p>Un modèle de processeur, dans le référentiel : ses caractéristiques ne changent
+            pas, elles se saisissent une fois et valent pour toutes les machines qui le
+            portent. Le collecteur crée la ligne quand il rencontre un modèle inconnu, avec
+            ce que la machine dit d'elle-même (cœurs, threads, fréquence de base, niveau
+            x86-64), puis n'y revient jamais.</p>
+          {% elif obj.kind == 'composant' and not obj.is_manual %}
+          <p>Découvert sur l'hyperviseur. Le nom, la catégorie, la marque et le modèle sont
+            proposés par Proxmox d'après les identifiants PCI ou USB, une seule fois : une
+            correction tient. Le reste de ce qu'il mesure est réécrit à chaque passage.</p>
           {% endif %}
         {% endcall %}
       </h2>
@@ -129,6 +153,11 @@
       <table class="fiche">
         {% if obj.kind == 'node' %}
           {{ rel("Hôte parent", m.chaine(obj.parent) if obj.parent) }}
+          {{ rel("Processeur", resume_cpu(obj.cpu, obj.num('Sockets')) if obj.cpu) }}
+          {% if not obj.cpu and obj.parent and obj.parent.cpu %}
+          {{ rel("Processeur de l'hôte", resume_cpu(obj.parent.cpu, obj.parent.num('Sockets'))) }}
+          {% endif %}
+          {{ rel("Périphériques attribués", m.liens(obj.devices) if obj.devices) }}
           {{ rel("Invités", m.liens(obj.children) if obj.children) }}
           {{ rel("Adresses", m.liens(obj.ips) if obj.ips) }}
           {% set stacks = obj.containers|map(attribute='stack')|select|unique(attribute='key')|list %}
@@ -155,6 +184,13 @@
           <tr><th>Applications</th><td><span class="alerte-inline">aucune — l'impact métier de
             ces vulnérabilités ne peut pas être établi</span></td></tr>
           {% endif %}
+
+        {% elif obj.kind == 'cpu' %}
+          {{ rel("Machines", m.liens(obj.nodes) if obj.nodes) }}
+
+        {% elif obj.kind == 'composant' %}
+          {{ rel("Installé dans", m.chaine(obj.host) if obj.host) }}
+          {{ rel("Attribué à", m.chaine(obj.assigned) if obj.assigned) }}
 
         {% elif obj.kind == 'ipam' %}
           {{ rel("Nœud", m.chaine(obj.node) if obj.node) }}
@@ -192,6 +228,24 @@
   {% if edition %}</form>{% endif %}
 
   {% if not edition %}{{ m.gestes_ligne(obj) }}{% endif %}
+
+  {% if obj.kind == 'node' and (obj.composants or obj.sel('Type') not in ('VM', 'LXC')) %}
+  <section class="bloc">
+    <h2>Matériel <span class="compte">{{ obj.composants|length }}</span>
+      <a class="bouton" href="/materiel?nouveau=composant&amp;hote={{ obj.id }}#creer-composant">Ajouter un composant</a>
+    </h2>
+    {% if obj.composants %}{{ l.table_composants(obj.composants, hote=false) }}
+    {% else %}<p class="rien">Aucun composant connu : ceux d'un hyperviseur Proxmox sont
+      relevés par le collecteur, les autres se saisissent.</p>{% endif %}
+  </section>
+  {% endif %}
+
+  {% if obj.kind == 'cpu' and obj.nodes %}
+  <section class="bloc">
+    <h2>Machines équipées <span class="compte">{{ obj.nodes|length }}</span></h2>
+    {{ l.table_noeuds(obj.nodes) }}
+  </section>
+  {% endif %}
 
   {% if obj.kind == 'node' and obj.containers %}
   <section class="bloc">

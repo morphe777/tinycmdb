@@ -13,6 +13,8 @@ schéma OpenAPI sous /api/v1/openapi.json. Ils décrivent les routes, pas l'inve
 bouton « Authorize » de la page permet ensuite d'essayer chaque route avec un jeton.
 """
 
+import json
+
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from cmdb.depot import BaseInaccessible
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -20,6 +22,8 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 import version
 
 from . import ecriture, exposition, store
+
+TYPES_DOC = "noeud, conteneur, image, ip, vlan, application, cpu, composant"
 
 INVITE = ("Jeton requis : en-tête « Authorization: Bearer <jeton> ». Les jetons se créent "
           "dans Administration → Jetons de la console.")
@@ -56,7 +60,8 @@ def creer(data, redacteur):
         title="TinyCMDB",
         version=version.VERSION,
         description=("Inventaire d'infrastructure : nœuds, conteneurs, stacks, images, "
-                     "adresses IP, VLAN, applications.\n\n" + INVITE),
+                     "adresses IP, VLAN, applications, processeurs, composants matériels."
+                     "\n\n" + INVITE),
         docs_url="/docs", redoc_url=None, openapi_url="/openapi.json",
     )
 
@@ -97,7 +102,9 @@ def creer(data, redacteur):
             "jeton": {"nom": jeton["nom"], "droits": jeton["droits"]},
             "types": list(exposition.TYPES),
             "liens": {"guide": "/api/v1/guide", "schema": "/api/v1/schema",
-                      "journal": "/api/v1/journal", "documentation": "/api/v1/docs", "mcp": "/mcp"},
+                      "journal": "/api/v1/journal", "capacite": "/api/v1/capacite",
+                      "contexte": "/api/v1/contexte/{type}/{id}",
+                      "documentation": "/api/v1/docs", "mcp": "/mcp"},
         }
 
     @api.get("/guide", response_class=PlainTextResponse,
@@ -106,7 +113,7 @@ def creer(data, redacteur):
         return exposition.guide()
 
     @api.get("/schema", summary="Tables, champs, types, provenance et options")
-    def schema(type: str | None = Query(None, description="noeud, conteneur, image, ip, vlan, application"),
+    def schema(type: str | None = Query(None, description=TYPES_DOC),
                jeton=Depends(lecture)):
         try:
             return exposition.schema_public(snap(), type)
@@ -159,27 +166,59 @@ def creer(data, redacteur):
         return exposition.etat(snap())
 
     @api.get("/journal", summary="Historique des écritures, du plus récent au plus ancien")
-    def journal(type: str | None = Query(None, description="noeud, conteneur, image, ip, vlan, application"),
+    def journal(type: str | None = Query(None, description=TYPES_DOC),
                 id: int | None = Query(None, description="identifiant de l'objet (avec type)"),
                 acteur: str | None = Query(None, description="interface, collecteur, api:<jeton>, mcp:<jeton>…"),
+                depuis: str | None = Query(None, description="date ISO 8601 : entrées postérieures seulement"),
+                champ: str | None = Query(None, description="nom exact d'un champ"),
                 limite: int = Query(50, ge=1, le=500), jeton=Depends(lecture)):
         try:
-            return exposition.journal(data.depot, type, id, acteur, limite)
+            return exposition.journal(data.depot, type, id, acteur, limite, depuis, champ)
         except exposition.Introuvable as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @api.get("/capacite", summary="Par hyperviseur : matériel, ressources promises aux invités, reste")
+    def capacite(jeton=Depends(lecture)):
+        return exposition.capacite(snap())
+
+    @api.get("/contexte/stack/{cle:path}", summary="Une stack et toute sa chaîne : hôte, hyperviseur, matériel")
+    def contexte_stack(cle: str, jeton=Depends(lecture)):
+        s = snap()
+        st = s.stacks_by_key.get(cle)
+        if st is None:
+            raise HTTPException(status_code=404, detail=f"stack {cle} introuvable")
+        return exposition.contexte_stack(s, st)
+
+    @api.get("/contexte/{type}/{ident}",
+             summary="Un objet et tout son voisinage en un appel : hôte, matériel, invités, applications")
+    def contexte(type: str, ident: int, jeton=Depends(lecture)):
+        s, obj = _objet(type, ident)
+        return exposition.contexte(s, obj)
 
     @api.get("/{type}", summary="Liste des objets d'un type")
     def liste(type: str, q: str | None = Query(None, description="filtre texte"),
+              filtres: str | None = Query(None, description='JSON {champ: valeur}, ex. {"Arch": "arm64", "RAM_Gb": ">=16"}'),
+              champs: str | None = Query(None, description="champs à rendre, séparés par des virgules"),
+              vides: bool = Query(True, description="rendre aussi les champs vides"),
               limite: int = Query(200, ge=1, le=1000), depart: int = Query(0, ge=0),
               jeton=Depends(lecture)):
         try:
             kind = exposition.kind_de(type)
         except exposition.Introuvable as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        try:
+            conditions = json.loads(filtres) if filtres else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="`filtres` : JSON invalide")
+        choisis = [c.strip() for c in champs.split(",") if c.strip()] if champs else None
         s = snap()
-        total, objets = exposition.lister(s, kind, q, limite, depart)
+        try:
+            total, objets = exposition.lister(s, kind, q, limite, depart, conditions)
+        except exposition.Introuvable as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return {"total": total, "depart": depart,
-                "objets": [exposition.ligne_liste(s, o) for o in objets]}
+                "objets": [exposition.ligne_liste(s, o, vides=vides, choisis=choisis)
+                           for o in objets]}
 
     @api.get("/{type}/{ident}", summary="Un objet, avec ses champs, leur provenance et ses liens")
     def detail(type: str, ident: int, jeton=Depends(lecture)):
@@ -198,7 +237,8 @@ def creer(data, redacteur):
         s = data.get(force=True)
         return {"changements": changements, "objet": exposition.objet(s, s.get(obj.kind, ident))}
 
-    @api.post("/{type}", status_code=201, summary="Crée un objet (nœud, adresse, VLAN, application)")
+    @api.post("/{type}", status_code=201,
+              summary="Crée un objet (nœud, adresse, VLAN, application, processeur, composant)")
     def creer_objet(type: str,
                     corps: dict = Body(..., examples=[{"Address": "192.168.10.42", "MAC": "AA:BB:CC:DD:EE:FF"}]),
                     jeton=Depends(ecriture_)):

@@ -1,9 +1,9 @@
 # TinyCMDB — mode d'emploi pour un agent
 
-TinyCMDB est l'inventaire d'une infrastructure auto-hébergée : ce qui tourne, où, et à
-quoi ça sert. Une partie est **découverte** automatiquement (Proxmox, Docker, Trivy,
-Cup) par un collecteur qui repasse toutes les 15 minutes ; le reste est **saisi** à la
-main — par l'interface web, par l'API, ou par toi.
+TinyCMDB est l'inventaire d'une infrastructure auto-hébergée : ce qui tourne, où, sur
+quel matériel, et à quoi ça sert. Une partie est **découverte** automatiquement (Proxmox,
+Docker, Trivy, Cup) par un collecteur qui repasse toutes les 15 minutes ; le reste est
+**saisi** à la main — par l'interface web, par l'API, ou par toi.
 
 Ce guide est le même que celui de l'API REST (`GET /api/v1/guide`). Les outils de ce
 serveur et les routes de l'API font exactement la même chose.
@@ -18,6 +18,8 @@ serveur et les routes de l'API font exactement la même chose.
 | `ip`          | une adresse IP                                 | `Address`     | Proxmox, ou à la main |
 | `vlan`        | un sous-réseau (référentiel)                   | `name`        | à la main uniquement |
 | `application` | un service au sens métier                      | `Name`        | à la main uniquement |
+| `cpu`         | un **modèle** de processeur (référentiel)      | `Name`        | amorcé par Proxmox, puis à la main |
+| `composant`   | carte PCIe, disque, périphérique USB           | `UID`         | Proxmox, ou à la main (`Source = Manual`) |
 
 Une **stack** n'est pas une table : c'est le regroupement des conteneurs d'un même projet
 Docker Compose sur un même hôte. Sa clé est `hôte/nom` (ex. `myTools/tinycmdb`).
@@ -27,7 +29,44 @@ Liens principaux :
 - un conteneur a un hôte (nœud), une image, une stack, et des applications ;
 - une application regroupe des conteneurs — donc des stacks — et éventuellement des
   nœuds directs (une VM qui rend un service sans Docker) ;
-- une adresse appartient à un VLAN et pointe vers un nœud.
+- une adresse appartient à un VLAN et pointe vers un nœud ;
+- une machine physique a un `CPU` (lien vers le référentiel) et des composants
+  (`Components`) ; un composant est installé dans un hôte (`Host`) et peut être attribué
+  en passthrough à une VM (`Assigned_to`).
+
+## Le matériel
+
+Ce qu'il faut savoir pour raisonner sur une panne ou une conception, sans aller le
+chercher ailleurs :
+
+- **sur tout nœud** : `Arch` (vocabulaire Docker : `amd64`, `arm64`, `arm/v7`…, à
+  rapprocher des plateformes d'une image), `CPU_level` (niveau x86-64 *effectivement exposé*
+  : celui de l'hyperviseur, ou celui du type de processeur d'une VM — une VM en `kvm64` est
+  en v1 et ne lance pas un binaire compilé pour v2/v3), `Machine` (chipset et
+  micrologiciel d'une VM, mode de démarrage d'un hyperviseur) ;
+- **sur une machine physique** : `CPU` (le modèle), `Sockets`, `Kernel`, et ce qu'aucune
+  API ne voit et qui se saisit : `Motherboard`, `BIOS`, `RAM_type`, `RAM_ECC`, `RAM_MHz`,
+  `RAM_modules` (barrettes et emplacements), `RAM_max_Gb` ;
+- **sur un invité Proxmox** : `CPU_type` (tel que déclaré, `kvm64 (défaut)` sans
+  déclaration) et `Config` — la configuration Proxmox complète, en `clé: valeur` : disques
+  et stockage, cartes réseau, pont et **VLAN** (`tag=`), démarrage automatique,
+  ballooning, passthrough (`hostpciN`, `usbN`), étiquettes, notes Proxmox. Lis-la : la
+  plupart des réponses sur un invité y sont ;
+- **le référentiel `cpu`** : une ligne par modèle, partagée par toutes les machines qui le
+  portent. Le collecteur l'amorce (cœurs, threads, fréquence de base, niveau x86-64,
+  virtualisation) ; fréquence turbo, TDP, cache L3, graphique intégré, mémoire maximale
+  se saisissent **une fois**. Si tu les connais avec certitude et qu'ils manquent,
+  propose de les compléter avec `modifier("cpu", id, …)` : ils ne changeront plus ;
+- **les composants** : relevés sur chaque hyperviseur (cartes réseau, GPU, HBA,
+  accélérateurs, disques avec santé SMART et usure, périphériques USB), avec le groupe
+  IOMMU et la VM qui les reçoit. Nom, catégorie, marque et modèle sont proposés une fois
+  par le collecteur puis restent à la main (une correction tient) ; `Reference`, `Ports`,
+  `Speed_Mbps` (en Mbit/s : 2500 pour 2,5 Gb/s), `Standard`, `Firmware` se saisissent.
+  Un disque qu'une VM reçoit derrière un contrôleur passé en entier n'est pas visible :
+  le contrôleur, si, attribué à la VM.
+
+Les champs sans objet pour une ligne (la carte mère d'un LXC, la configuration d'un
+hyperviseur) ne sont ni rendus ni modifiables.
 
 Les noms de champ sont exacts et sensibles à la casse (`Name`, `notes` sur un nœud mais
 `Notes` sur une adresse, `URL 2`, `Application - Stack`). L'outil `schema` les liste
@@ -50,19 +89,40 @@ par Proxmox n'expose que `Roles`, `Criticality`, `notes` et `Application`, alors
 
 ## Comment s'y prendre
 
-1. **Trouver** : `rechercher` (nom, IP, MAC, port, chemin de compose, OS…) renvoie des
-   références `{type, id, nom}`. Pour parcourir un type, `lister`.
-2. **Comprendre** : `lire(type, id)` donne les champs, leur provenance, les liens
-   résolus. Pour une stack, `stack(cle)`.
+1. **Trouver** : `rechercher` (nom, IP, MAC, port, chemin de compose, OS, processeur,
+   composant…) renvoie des références `{type, id, nom}`. Pour interroger un type,
+   `lister` avec `filtres` : `lister("noeud", filtres={"Arch": "arm64"})`,
+   `lister("composant", filtres={"Category": "Disk", "Wearout": ">=50"})`,
+   `lister("noeud", filtres={"Type": "Physical", "BIOS": null})` (BIOS non renseigné).
+   `champs=[…]` restreint la réponse ; les champs vides sont omis par défaut.
+2. **Comprendre** : `contexte(type, id)` rend l'objet **et tout son voisinage** en un
+   appel — pour un nœud : hôte, processeur et ses caractéristiques, composants,
+   périphériques attribués, invités, conteneurs, adresses ; pour un conteneur ou une
+   application : la chaîne jusqu'à l'hyperviseur et son matériel. C'est le point de
+   départ d'un dépannage ou d'une conception. `lire(type, id)` donne le détail d'un seul
+   objet, avec la provenance de chaque champ et `modifiables`. Pour une stack,
+   `stack(cle)` ou `contexte("stack", cle=…)`. Pour placer une nouvelle charge,
+   `capacite` : par hyperviseur, cœurs physiques, mémoire, et ce qui est déjà promis.
 3. **Agir** (jeton en écriture seulement) :
    - `modifier(type, id, champs)` — seuls les champs de `modifiables` ;
-   - `creer(type, champs)` — pour `noeud`, `ip`, `vlan` et `application` seulement ;
-     la ligne créée est marquée saisie manuelle, donc protégée du collecteur ;
+   - `creer(type, champs)` — pour `noeud`, `ip`, `vlan`, `application`, `cpu` et
+     `composant` ; la ligne créée est marquée saisie manuelle, donc protégée du
+     collecteur. Pour une machine que Proxmox ne voit pas (NAS, Raspberry Pi, routeur) :
+     crée son modèle de processeur s'il manque, puis renseigne `CPU` sur le nœud et crée
+     ses composants avec `Host` ;
    - `rattacher_stack(cle, applications)` — fixe les applications servies par tous les
      conteneurs d'une stack (remplace la liste).
 4. **Vérifier** : chaque écriture renvoie l'objet à jour ; `journal` montre l'historique
    d'un objet, écritures de l'interface comprises ; `journal(acteur="mcp:<ton jeton>")`
    retrouve tes propres écritures.
+
+**Ce qui a changé** : le journal tient aussi ce que le collecteur constate — chaque champ
+qui change d'une passe à l'autre (un conteneur passé à `Exited`, une image dont
+l'empreinte a changé, une VM qui a gagné de la mémoire, une configuration Proxmox
+modifiée, un disque dont la santé SMART se dégrade). Devant une panne, commence par
+`journal(depuis="2026-11-17", acteur="collecteur")`, éventuellement restreint à un objet
+(`type`, `id`) ou à un champ (`champ="Status"`). Les `Last_seen` et les compteurs de CVE
+n'y figurent pas.
 
 Pour un point de situation : `a_traiter` (files d'action : CVE critiques sans
 application, stacks sans rattachement, mises à jour disponibles…), `sursis` (lignes que
@@ -89,6 +149,9 @@ l'administration de la console, pas par l'API. Ne devine pas un libellé, lis `s
 - **Écrire un champ auto ou enrichi** : il serait écrasé au passage suivant.
 - **Créer un conteneur ou une image** : ce sont des faits Docker, le collecteur seul
   les connaît.
+- **Chercher sur Internet à la place de la CMDB** : ce n'est pas interdit, mais ce que tu
+  trouves (les caractéristiques d'un modèle, par exemple) a sa place dans le référentiel
+  — propose de l'y écrire, pour que la question ne se repose pas.
 - **Créer une option ou un champ** : c'est l'administration de la console.
 
 Toute écriture est journalisée sous le nom de ton jeton (`mcp:<nom>`).

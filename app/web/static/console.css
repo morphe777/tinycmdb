@@ -299,6 +299,9 @@ h1 .appicon { width: 30px; height: 30px; border-radius: 12px; font-size: 15px; m
 .vide { color: var(--encre-3); font-size: 12.5px; }
 .unite { color: var(--encre-3); font-size: 11.5px; }
 .long { white-space: pre-wrap; }
+.config summary { cursor: pointer; color: var(--encre-3); font-size: 12.5px; }
+.config pre { margin: 6px 0 0; font-family: var(--mono); font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 28em; overflow-y: auto; }
 .maj { color: var(--warn); font-size: 12.5px; }
 .alerte-inline { color: var(--crit); }
 
