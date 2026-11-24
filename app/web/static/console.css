@@ -242,6 +242,17 @@ h2 .compte { font-weight: 400; font-size: 13px; color: var(--encre-3); }
 .tbl .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums;
             white-space: nowrap; }
 .tbl th.num { text-align: right; }
+/* Intitulé triable : posé par le script, qui en fait un bouton. Sans script, l'intitulé
+   reste un simple texte et l'ordre est celui du serveur. La flèche n'apparaît que sur la
+   colonne triée : six flèches grises sur chaque tableau, c'est du bruit. */
+.tbl th .tri-entete {
+  all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+}
+.tbl th .tri-entete:hover { color: var(--encre); }
+.tbl th .tri-entete:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.tbl th[aria-sort] { color: var(--encre); }
+.tbl th[aria-sort="ascending"] .tri-entete::after { content: "▲"; font-size: 8px; }
+.tbl th[aria-sort="descending"] .tri-entete::after { content: "▼"; font-size: 8px; }
 .tbl .roles { line-height: 2; }
 .tbl .ligne-crit td { background: var(--crit-doux); }
 .col-prov { min-width: 150px; }

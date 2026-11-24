@@ -119,7 +119,7 @@
     <td>{{ ip.sel('Type') or '' }}</td>
     <td>{{ m.badge(ip.sel('Status'), 'warn' if ip.sel('Status') == 'To check' else 'neutre') }}</td>
     <td>{% if ip.node %}{{ m.lien_ref(ip.node) }}{% else %}<span class="vide">—</span>{% endif %}</td>
-    <td>{{ ip.dt('Last_seen')|ago }}</td>
+    {% set vu = ip.dt('Last_seen') %}<td data-tri="{{ vu.isoformat() if vu }}">{{ vu|ago }}</td>
   </tr>
   {% endfor %}
   </tbody>
@@ -190,6 +190,9 @@
       {%- set traits = [] -%}
       {%- if c.get('Capacity_Gb') %}{% if traits.append(c.get('Capacity_Gb') ~ ' Go') %}{% endif %}{% endif -%}
       {%- if c.get('Ports') %}{% if traits.append(c.get('Ports') ~ ' ports') %}{% endif %}{% endif -%}
+      {%- if c.get('VRAM_Gb') %}{% if traits.append(c.get('VRAM_Gb') ~ ' Go ' ~ ('partagés' if c.get('Shared_memory') else 'VRAM')) %}{% endif %}{% endif -%}
+      {%- if c.get('GPU_cores') %}{% if traits.append(c.get('GPU_cores') ~ ' cœurs GPU') %}{% endif %}{% endif -%}
+      {%- if c.multi('Compute_API') %}{% if traits.append(c.multi('Compute_API')|join(', ')) %}{% endif %}{% endif -%}
       {%- if c.get('Speed_Mbps') %}{% if traits.append(c.get('Speed_Mbps') ~ ' Mbit/s') %}{% endif %}{% endif -%}
       {%- if c.sel('Standard') %}{% if traits.append(c.sel('Standard')) %}{% endif %}{% endif -%}
       {%- if c.get('Usage') %}{% if traits.append(c.get('Usage')) %}{% endif %}{% endif -%}

@@ -209,6 +209,11 @@ TABLES = {
         Champ("Speed_Mbps", "entier", "speed_mbps"),
         Champ("Capacity_Gb", "entier", "capacity_gb"),
         Champ("Standard", "select", "standard"),
+        # Propres aux GPU et aux accélérateurs (migration 003), sans objet ailleurs.
+        Champ("VRAM_Gb", "entier", "vram_gb"),
+        Champ("Shared_memory", "bool", "shared_memory"),
+        Champ("GPU_cores", "entier", "gpu_cores"),
+        Champ("Compute_API", "multi"),
         Champ("Usage", "texte", "usage"),
         Champ("Health", "texte", "health"),
         Champ("Wearout", "entier", "wearout"),

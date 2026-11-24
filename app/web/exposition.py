@@ -476,7 +476,9 @@ def _formulaire(descripteurs, valeurs, toutes=False):
 def modifier(snap, redacteur, obj, valeurs, acteur):
     if not isinstance(valeurs, dict) or not valeurs:
         raise ecriture.EcritureRefusee("Corps attendu : un objet {champ: valeur} non vide.")
-    descripteurs = ecriture.formulaire(snap, obj)
+    # Évalué pour le type (ou la catégorie) que pose cette même écriture : passer une carte
+    # en GPU et renseigner sa mémoire se fait en un appel.
+    descripteurs = ecriture.formulaire(snap, obj, ecriture.pilote_soumis(obj.kind, valeurs))
     modifiables = {d["champ"] for d in descripteurs}
     refuses = set(valeurs) - modifiables
     if refuses:
@@ -504,6 +506,14 @@ def creer(snap, redacteur, kind, valeurs, acteur):
         raise ecriture.EcritureRefusee(
             "Champs non saisissables à la création : " + ", ".join(sorted(inconnus))
             + ". Saisissables : " + ", ".join(sorted(connus)))
+    # Ici on le dit, plutôt que de l'écarter en silence comme le fait la console : un agent
+    # qui croit avoir enregistré la mémoire d'un GPU doit apprendre qu'il manque la catégorie.
+    hors_sujet = ecriture.sans_objet(kind, valeurs)
+    if hors_sujet:
+        pilote = ecriture.PILOTES[kind][0]
+        raise ecriture.EcritureRefusee(
+            "Champs sans objet pour cette ligne : " + ", ".join(sorted(hors_sujet))
+            + f" (selon {pilote} = {valeurs.get(pilote)!r}).")
     return redacteur.creer(snap, kind, _formulaire(descripteurs, valeurs), acteur=acteur)
 
 

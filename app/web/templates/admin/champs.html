@@ -47,7 +47,7 @@
 <section class="bloc">
   <h2>{{ t.libelle }} <span class="compte">{{ t.perso|length }} personnalisé{{ 's' if t.perso|length > 1 }}</span></h2>
   {% if t.perso %}
-  <div class="tbl-scroll"><table class="tbl tbl-admin tbl-champs">
+  <div class="tbl-scroll"><table class="tbl tbl-admin tbl-champs" data-sans-tri>
     <thead><tr><th>Ordre</th><th>Nom</th><th>Aide</th><th>Type</th><th class="actions"></th></tr></thead>
     <tbody>
     {% for p in t.perso %}

@@ -74,7 +74,7 @@
     {% for c in copies %}
     <tr>
       <td class="mono">{{ c.nom }}</td>
-      <td>{{ c.date|datefr }} <span class="vide">({{ c.date|ago }})</span></td>
+      <td data-tri="{{ c.date.isoformat() if c.date }}">{{ c.date|datefr }} <span class="vide">({{ c.date|ago }})</span></td>
       <td class="num">{{ (c.taille / 1024)|round(0)|int }} Kio</td>
       <td class="actions"><a class="bouton bouton-ligne" href="/admin/sauvegardes/fichier/{{ c.nom }}" download>Télécharger</a></td>
     </tr>

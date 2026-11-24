@@ -243,8 +243,8 @@
       <tr>
         <td>{{ s.name }}</td>
         <td class="num">{{ s.count }}</td>
-        <td>{{ s.seen|datefr }}</td>
-        <td>
+        <td data-tri="{{ s.seen.isoformat() if s.seen }}">{{ s.seen|datefr }}</td>
+        <td data-tri="{{ s.age_hours if s.age_hours is not none }}">
           {% if s.age_hours is none %}<span class="vide">jamais</span>
           {% elif s.age_hours < 2 %}<span class="bool bool-oui">{{ s.seen|ago }}</span>
           {% elif s.age_hours < 26 %}<span class="badge badge-neutre">{{ s.seen|ago }}</span>
@@ -285,9 +285,9 @@
         <td>{{ m.lien(e.obj) }}</td>
         <td>{{ {'node': 'nœud', 'container': 'conteneur', 'image': 'image',
                 'ipam': 'adresse'}[e.obj.kind] }}</td>
-        <td>{{ e.seen|datefr }} <span class="vide">({{ e.seen|ago }})</span></td>
-        <td>{{ e.retard_hours|hours }}</td>
-        <td>{% if e.remaining_hours <= 0 %}<span class="badge badge-crit">au prochain passage</span>
+        <td data-tri="{{ e.seen.isoformat() if e.seen }}">{{ e.seen|datefr }} <span class="vide">({{ e.seen|ago }})</span></td>
+        <td data-tri="{{ e.retard_hours }}">{{ e.retard_hours|hours }}</td>
+        <td data-tri="{{ e.remaining_hours }}">{% if e.remaining_hours <= 0 %}<span class="badge badge-crit">au prochain passage</span>
             {% else %}{{ e.remaining_hours|hours }}{% endif %}</td>
         <td><span class="jauge" title="{{ e.age_hours|round }} h écoulées sur {{ snap.cfg.RETIRE_GRACE_HOURS }}">
           <i style="width:{{ [100, (100 * e.age_hours / snap.cfg.RETIRE_GRACE_HOURS)]|min|round }}%"></i></span></td>

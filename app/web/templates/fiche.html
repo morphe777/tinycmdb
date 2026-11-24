@@ -117,7 +117,7 @@
         {% endif %}
         {% for r in rows %}
         {% set c = par_nom.get(r.field) if edition %}
-        <tr class="origine-ligne-{{ r.origin }}{{ ' ligne-champ' if c }}">
+        <tr class="origine-ligne-{{ r.origin }}{{ ' ligne-champ' if c }}"{% if r.portee %} data-portee="{{ r.portee }}"{% endif %}>
           <th>{{ r.field }}</th>
           <td>{% if c %}{{ m.champ_cellule(c) }}{% else %}{{ m.valeur(r, obj) }}{% endif %}</td>
           {% if not origine_commune %}<td class="col-origine">{{ m.origine(r.origin) }}</td>{% endif %}
@@ -128,7 +128,7 @@
            rejoignent les autres : un champ qu'on peut saisir doit être à portée. #}
         {% if edition %}
         {% for c in champs if c.champ not in noms_lignes and c.champ not in ('Name', 'stack') %}
-        <tr class="ligne-champ origine-ligne-manuel">
+        <tr class="ligne-champ origine-ligne-manuel"{% if c.portee %} data-portee="{{ c.portee }}"{% endif %}>
           <th>{{ c.libelle }}</th>
           <td>{{ m.champ_cellule(c) }}</td>
           {% if not origine_commune %}<td class="col-origine">{{ m.origine('manuel') }}</td>{% endif %}

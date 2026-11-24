@@ -49,7 +49,7 @@
     <span class="compte">{{ 'plusieurs choix' if g.type == 'multi' else 'un choix' }}{{ ' · champ personnalisé' if g.perso }}</span>
   </h2>
   {% if g.options %}
-  <div class="tbl-scroll"><table class="tbl tbl-admin tbl-options">
+  <div class="tbl-scroll"><table class="tbl tbl-admin tbl-options" data-sans-tri>
     <thead><tr><th>Ordre</th><th>Libellé</th><th>Couleur</th><th>Aperçu</th><th>Utilisation</th><th class="actions"></th></tr></thead>
     <tbody>
     {% for o in g.options %}

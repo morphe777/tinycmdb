@@ -63,10 +63,24 @@ chercher ailleurs :
   par le collecteur puis restent à la main (une correction tient) ; `Reference`, `Ports`,
   `Speed_Mbps` (en Mbit/s : 2500 pour 2,5 Gb/s), `Standard`, `Firmware` se saisissent.
   Un disque qu'une VM reçoit derrière un contrôleur passé en entier n'est pas visible :
-  le contrôleur, si, attribué à la VM.
+  le contrôleur, si, attribué à la VM ;
+- **les GPU et accélérateurs** sont des composants (`Category` = `GPU` ou `Accelerator`),
+  **une ligne par unité** : quatre cartes font quatre lignes, un Mac Mini en a une pour
+  son GPU et une pour son Neural Engine, avec `Bus` = `SoC` quand l'unité est intégrée à
+  la puce. Le champ `iGPU` du référentiel `cpu` ne fait que nommer le graphique d'un
+  modèle ; c'est le composant qui dit ce qu'en a une machine donnée. Sur ces deux
+  catégories seulement, et toujours saisis : `VRAM_Gb` (la mémoire dont il dispose, ce qui
+  borne la taille d'un modèle chargeable), `Shared_memory` (vrai si c'est celle de la
+  machine — iGPU, puce Apple : ce qu'il prend manque alors aux applications), `GPU_cores`,
+  `Compute_API` (CUDA, ROCm, oneAPI, Metal, Vulkan, OpenCL, VA-API, QSV, NVENC, Edge TPU,
+  Hailo, Core ML). Pour savoir où faire tourner une charge d'IA ou un transcodage :
+  `lister("composant", filtres={"Category": "GPU"})`.
 
 Les champs sans objet pour une ligne (la carte mère d'un LXC, la configuration d'un
-hyperviseur) ne sont ni rendus ni modifiables.
+hyperviseur, le `vmid`, l'agent invité ou la sauvegarde d'une machine physique) ne sont ni
+rendus ni modifiables. Une même écriture peut changer le type (ou la catégorie) et
+renseigner les champs qu'il ouvre : passer un composant en `GPU` et poser sa `VRAM_Gb` se
+fait en un `modifier`.
 
 Les noms de champ sont exacts et sensibles à la casse (`Name`, `notes` sur un nœud mais
 `Notes` sur une adresse, `URL 2`, `Application - Stack`). L'outil `schema` les liste

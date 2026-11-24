@@ -301,7 +301,7 @@
 
   {% elif c.widget == 'select' %}
     {% if c.options %}
-    <select id="{{ cid }}" name="{{ nom }}">
+    <select id="{{ cid }}" name="{{ nom }}"{% if c.regles %} data-portees="{{ c.regles|tojson|forceescape }}"{% endif %}>
       <option value="">— non renseigné —</option>
       {% for o in c.options %}
       <option value="{{ o }}" {% if o == c.valeur %}selected{% endif %}>{{ o }}</option>
@@ -327,7 +327,7 @@
 #}
 {% macro champ_saisie(c) -%}
 {% set cid = 'f-' ~ c.champ|replace(' ', '-') %}
-<div class="champ{{ ' champ-large' if c.widget == 'long' }}">
+<div class="champ{{ ' champ-large' if c.widget == 'long' }}"{% if c.portee %} data-portee="{{ c.portee }}"{% endif %}>
   <label for="{{ cid }}">{{ c.libelle }}</label>
   {{ controle(c) }}
   {% if c.notice %}<small class="notice">{{ c.notice }}</small>{% endif %}

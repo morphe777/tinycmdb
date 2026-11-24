@@ -591,11 +591,14 @@ Fields, table by table:
   passed through to), `Vendor`, `Model`, `Reference`, `Chipset`, `Address`
   (PCI slot, device path), `IOMMU_group`, `Serial`, `Ports`, `Speed_Mbps`,
   `Capacity_Gb`, `Standard` (select: 2.5GbE, Wi-Fi 6, USB 3.1, Zigbee…),
+  `VRAM_Gb`, `Shared_memory`, `GPU_cores`, `Compute_API` (multi-select: CUDA,
+  ROCm, Metal, VA-API, Edge TPU… — GPU and Accelerator only, typed in),
   `Usage`, `Health`, `Wearout`, `Firmware`, `Doc`, `Source`, `Last_seen`,
   `Notes`. One row per PCI *slot* (a 4-port card is one card), bridges and
   chipset functions left out unless a VM receives them. Name, category, vendor
   and model are the collector's guess from the PCI/USB ids, written once: a
-  correction sticks.
+  correction sticks. A GPU or an NPU is one row per unit: a Mac mini has one
+  for its GPU and one for its Neural Engine (`Bus` = SoC).
 
 The reverse links (a node's containers, an image's containers) are not stored
 twice: they are computed. Fields of your own come on top, from *Administration

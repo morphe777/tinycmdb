@@ -235,6 +235,8 @@ FICHE_FIELDS = {
         ("Reference", "text"), ("Chipset", "text"), ("Address", "mono"),
         ("IOMMU_group", "text"), ("Serial", "mono"), ("Ports", "text"),
         ("Speed_Mbps", "unit:Mbit/s"), ("Capacity_Gb", "unit:Go"), ("Standard", "select"),
+        ("VRAM_Gb", "unit:Go"), ("Shared_memory", "bool"), ("GPU_cores", "text"),
+        ("Compute_API", "multi"),
         ("Usage", "text"), ("Health", "text"), ("Wearout", "unit:%"), ("Firmware", "text"),
         ("Doc", "url"), ("UID", "mono"), ("Source", "select"), ("Last_seen", "datetime"),
         ("Notes", "long"),
@@ -247,18 +249,21 @@ MODE_PERSO = {"texte": "text", "long": "long", "url": "url", "entier": "text",
               "bool": "bool", "date": "date", "select": "select", "multi": "multi"}
 
 
-def fiche_rows(snap, obj):
+def fiche_rows(snap, obj, tous=False):
+    """Lignes de la fiche. `tous` : en modification, avec aussi les champs sans objet pour
+    le type actuel, à leur place, que la page révèle si l'on change de type."""
     rows = []
     champs = list(FICHE_FIELDS.get(obj.kind, []))
     champs += [(p["nom"], MODE_PERSO.get(p["type"], "text")) for p in snap.perso.get(obj.kind, [])]
     for field, mode in champs:
-        if not ecriture.applicable(obj, field):
+        if not (tous and ecriture.pilote_modifiable(obj)) and not ecriture.applicable(obj, field):
             continue
         rows.append({
             "field": field,
             "mode": mode,
             "value": obj.get(field),
             "origin": obj.origin(field),
+            "portee": ecriture.portee(obj.kind, field),
         })
     return rows
 
@@ -280,11 +285,11 @@ def _detail(request, kind, obj_id, edition=False, erreur=None, enregistres=0,
     obj = snap.get(kind, obj_id)
     if obj is None:
         raise HTTPException(status_code=404, detail=f"{kind} {obj_id} introuvable")
-    rows = fiche_rows(snap, obj)
+    rows = fiche_rows(snap, obj, tous=bool(edition))
     # Calculé à chaque affichage, y compris en consultation : c'est ce qui décide de la
     # présence du bouton « Modifier ». Une ligne dont aucun champ n'est à toi ne doit pas
     # proposer une porte qui ne mène nulle part.
-    champs = ecriture.formulaire(snap, obj)
+    champs = ecriture.formulaire(snap, obj, tous=bool(edition))
     if saisie is not None:
         for descr in champs:
             descr["valeur"] = saisie.get(descr["champ"], descr["valeur"])
@@ -637,7 +642,7 @@ async def modifier(request: Request, prefixe: str, obj_id: int):
     def reafficher(message, code):
         """Réaffichage du formulaire tel qu'il vient d'être rempli. Le vider pour une
         option mal choisie obligerait à retaper le reste."""
-        saisie = ecriture.saisie_brute(snap, ecriture.formulaire(snap, obj), donnees)
+        saisie = ecriture.saisie_brute(snap, ecriture.formulaire(snap, obj, tous=True), donnees)
         if kind == "vlan":
             return _detail_vlan(request, obj_id, edition=True, erreur=message,
                                 saisie=saisie, code=code)

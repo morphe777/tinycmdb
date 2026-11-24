@@ -103,6 +103,8 @@ _COMPOSANT = {
     "Name": MANUEL, "Category": MANUEL, "Vendor": MANUEL, "Model": MANUEL,
     "Reference": MANUEL, "Ports": MANUEL, "Speed_Mbps": MANUEL, "Standard": MANUEL,
     "Firmware": MANUEL, "Doc": MANUEL, "Notes": MANUEL,
+    # Rien de ce que Proxmox expose ne dit la mémoire d'un GPU ni ce qu'il sait calculer.
+    "VRAM_Gb": MANUEL, "Shared_memory": MANUEL, "GPU_cores": MANUEL, "Compute_API": MANUEL,
 }
 
 _BY_TABLE = {

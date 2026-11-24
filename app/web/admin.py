@@ -162,7 +162,9 @@ def traiter_import(snap, redacteur, kind, texte, simulation):
                 obj = par_cle.get(cellules[t.cle].strip().lower())
             if obj is not None:
                 entree["obj"] = obj
-                descripteurs = ecriture.formulaire(snap, obj)
+                descripteurs = ecriture.formulaire(
+                    snap, obj, ecriture.pilote_soumis(kind, {k: (v or "").strip()
+                                                             for k, v in cellules.items()}))
                 formulaire = _vers_formulaire(snap, kind, descripteurs, cellules)
                 changements = redacteur.appliquer(snap, obj, formulaire, acteur=ACTEUR,
                                                   simulation=simulation)

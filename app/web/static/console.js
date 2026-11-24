@@ -278,3 +278,114 @@
     zone.addEventListener("change", function () { rafraichir(zone); });
   });
 })();
+
+// ---------------------------------------------------------------- champs selon le type
+// Un nœud physique n'a ni vmid ni agent invité, un invité n'a ni carte mère ni barrettes,
+// une carte réseau n'a pas de mémoire graphique. Le serveur écarte déjà ces champs d'une
+// fiche enregistrée (`ecriture.applicable`), mais à la création — ou quand on change le
+// type d'une ligne manuelle — il ne connaît pas encore la valeur retenue : c'est la page
+// qui suit le choix, d'après les règles que le serveur pose sur le champ qui décide
+// (`data-portees`). Un champ masqué est aussi désactivé, donc absent de l'envoi : le
+// serveur ne le touche pas.
+(function () {
+  document.querySelectorAll("select[data-portees]").forEach(function (choix) {
+    var formulaire = choix.form;
+    if (!formulaire) { return; }
+    var regles;
+    try { regles = JSON.parse(choix.dataset.portees); } catch (e) { return; }
+    function appliquer() {
+      formulaire.querySelectorAll("[data-portee]").forEach(function (bloc) {
+        var regle = regles[bloc.dataset.portee];
+        if (!regle) { return; }
+        var dedans = regle[1].indexOf(choix.value) !== -1;
+        var masque = regle[0] === "dans" ? !dedans : dedans;
+        bloc.hidden = masque;
+        bloc.querySelectorAll("input, select, textarea, button").forEach(function (c) {
+          c.disabled = masque;
+        });
+      });
+    }
+    choix.addEventListener("change", appliquer);
+    appliquer();
+  });
+})();
+
+// ---------------------------------------------------------------- tri des tableaux
+// Un clic sur l'intitulé d'une colonne trie le tableau, un second clic inverse le sens.
+// Le tri se fait sur la valeur lue, pas sur le texte brut : une adresse IP se compare
+// octet par octet (10.2 avant 10.11), un nombre comme un nombre, un nom avec ses chiffres
+// (pve2 avant pve10). Une cellule peut fournir sa clé dans `data-tri` quand ce qu'elle
+// affiche ne se trie pas (« il y a 3 h », une date au format français).
+//
+// Les cases vides restent en bas dans les deux sens : on trie pour voir ce qui est
+// renseigné. Les tableaux dont l'ordre est une saisie (options et champs personnalisés,
+// rangés par leurs flèches) portent `data-sans-tri` : un tri au clic y contredirait
+// l'ordre qu'on vient de régler.
+(function () {
+  var IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?!\d)/;
+  var NOMBRE = /^-?\d[\d\u202f\u00a0]*([.,]\d+)?/;
+  var ISO = /^\d{4}-\d{2}-\d{2}/;
+  var comparateur = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
+
+  function cle(cellule) {
+    if (!cellule) { return null; }
+    var brut = cellule.dataset.tri;
+    if (brut === undefined) {
+      var controle = cellule.querySelector("input:not([type=hidden]), select, textarea");
+      brut = controle ? controle.value : cellule.textContent;
+    }
+    brut = brut.trim();
+    if (!brut || brut === "—") { return null; }
+    var ip = IPV4.exec(brut);
+    if (ip) {
+      return { n: ((+ip[1] * 256 + +ip[2]) * 256 + +ip[3]) * 256 + +ip[4] };
+    }
+    // Une date ISO commence par un nombre mais se trie comme du texte, à la minute près.
+    if (ISO.test(brut)) { return { t: brut }; }
+    var nombre = NOMBRE.exec(brut);
+    if (nombre) {
+      var valeur = parseFloat(nombre[0].replace(/[\s\u202f\u00a0]/g, "").replace(",", "."));
+      if (!isNaN(valeur)) { return { n: valeur }; }
+    }
+    return { t: brut };
+  }
+
+  function comparer(a, b) {
+    if ("n" in a && "n" in b) { return a.n - b.n; }
+    if ("n" in a) { return -1; }
+    if ("n" in b) { return 1; }
+    return comparateur.compare(a.t, b.t);
+  }
+
+  document.querySelectorAll("table.tbl").forEach(function (tableau) {
+    if (tableau.hasAttribute("data-sans-tri") || !tableau.tHead || !tableau.tBodies.length) {
+      return;
+    }
+    var corps = tableau.tBodies[0];
+    if (corps.rows.length < 2) { return; }
+    var entetes = tableau.tHead.rows[0].cells;
+    Array.prototype.forEach.call(entetes, function (th, index) {
+      if (!th.textContent.trim()) { return; }   // colonne d'actions
+      var bouton = document.createElement("button");
+      bouton.type = "button";
+      bouton.className = "tri-entete";
+      while (th.firstChild) { bouton.appendChild(th.firstChild); }
+      th.appendChild(bouton);
+      bouton.addEventListener("click", function () {
+        var montant = th.getAttribute("aria-sort") !== "ascending";
+        Array.prototype.forEach.call(entetes, function (autre) { autre.removeAttribute("aria-sort"); });
+        th.setAttribute("aria-sort", montant ? "ascending" : "descending");
+        var lignes = Array.prototype.map.call(corps.rows, function (ligne, rang) {
+          return { ligne: ligne, cle: cle(ligne.cells[index]), rang: rang };
+        });
+        lignes.sort(function (x, y) {
+          if (x.cle === null || y.cle === null) {
+            return (x.cle === null) - (y.cle === null) || x.rang - y.rang;
+          }
+          return (montant ? 1 : -1) * comparer(x.cle, y.cle) || x.rang - y.rang;
+        });
+        lignes.forEach(function (l) { corps.appendChild(l.ligne); });
+      });
+    });
+  });
+})();

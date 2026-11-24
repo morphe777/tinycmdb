@@ -421,13 +421,19 @@ class Snapshot:
 
         self.images.sort(key=lambda i: (-(i.num("CVE_critical") or 0),
                                         -(i.num("CVE_high") or 0), i.name.lower()))
-        self.ips.sort(key=lambda ip: ip.num("IP_int") or _ip_to_int(ip.get("Address")) or 0)
+        self.ips.sort(key=_ordre_ip)
         self.vlans.sort(key=lambda v: v.num("vlan_id") or 0)
+        # Les listes par VLAN et par nœud sont tirées de `self.ips` au moment des liens,
+        # donc avant ce tri : sans les reprendre ici, elles gardaient l'ordre d'insertion
+        # en base (.2, .11, .7, .18…).
+        for vlan in self.vlans:
+            vlan.ips.sort(key=_ordre_ip)
         self.cpus.sort(key=key)
         self.composants.sort(key=_ordre_composant)
         for node in self.nodes:
             # Par nom : on cherche « myTools » dans la liste, pas le vmid 101.
             node.children.sort(key=lambda n: n.name.lower())
+            node.ips.sort(key=_ordre_ip)
             node.containers.sort(key=key)
             node.composants.sort(key=_ordre_composant)
             node.devices.sort(key=_ordre_composant)
@@ -946,6 +952,10 @@ _CHEMINS_ICONE = ("/favicon.ico", "/apple-touch-icon.png", "/favicon.png", "/fav
 # disques), les périphériques USB ensuite.
 _ORDRE_CATEGORIES = ("GPU", "Accelerator", "Network", "Wireless", "Storage controller", "Disk",
                      "USB controller", "USB device", "Other")
+
+
+def _ordre_ip(ip):
+    return ip.num("IP_int") or _ip_to_int(ip.get("Address")) or 0
 
 
 def _ordre_composant(c):

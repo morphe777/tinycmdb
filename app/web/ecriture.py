@@ -174,6 +174,10 @@ CHAMPS = {
         ("Speed_Mbps", "entier"),
         ("Capacity_Gb", "entier"),
         ("Standard", "select"),
+        ("VRAM_Gb", "entier"),
+        ("Shared_memory", "bool"),
+        ("GPU_cores", "entier"),
+        ("Compute_API", "multi"),
         ("Firmware", "texte"),
         ("Doc", "url"),
         ("Notes", "long"),
@@ -185,17 +189,93 @@ CHAMPS = {
 # Proxmox d'une caméra ne sont pas des champs vides, ce sont des questions sans objet.
 PHYSIQUE_SEULEMENT = {"CPU", "Sockets", "Kernel", "Motherboard", "BIOS", "RAM_type", "RAM_ECC",
                       "RAM_MHz", "RAM_modules", "RAM_max_Gb"}
-INVITE_SEULEMENT = {"CPU_type", "Config"}
+# L'identifiant Proxmox, l'agent invité et la sauvegarde ne se rapportent qu'à un invité :
+# proposés sur une machine réelle, ils laissaient croire qu'il fallait les renseigner.
+INVITE_SEULEMENT = {"CPU_type", "Config", "vmid", "Guest_agent", "Backup"}
 TYPES_VIRTUELS = ("VM", "LXC")
 
 
-def applicable(obj, champ):
-    if obj.kind != "node":
+# Les champs propres au calcul (mémoire graphique, interfaces) n'ont de sens que sur un GPU
+# ou un accélérateur : la mémoire graphique d'une carte réseau est une question sans objet.
+CALCUL_SEULEMENT = {"VRAM_Gb", "Shared_memory", "GPU_cores", "Compute_API"}
+CATEGORIES_CALCUL = ("GPU", "Accelerator")
+
+# Pour chaque table : le champ qui décide, et pour chaque portée les valeurs de ce champ
+# où elle s'applique (« dans ») ou ne s'applique pas (« hors »). Une seule déclaration,
+# lue par le serveur (`applicable`) et transmise telle quelle à la page, qui masque les
+# champs pendant la saisie — à la création, ou quand on change le type d'une ligne
+# manuelle, le serveur ne connaît pas encore la valeur retenue.
+PILOTES = {
+    "node": ("Type", {"physique": ("hors", TYPES_VIRTUELS), "invite": ("dans", TYPES_VIRTUELS)}),
+    "composant": ("Category", {"calcul": ("dans", CATEGORIES_CALCUL)}),
+}
+_PORTEES = {
+    "node": {**{c: "physique" for c in PHYSIQUE_SEULEMENT},
+             **{c: "invite" for c in INVITE_SEULEMENT}},
+    "composant": {c: "calcul" for c in CALCUL_SEULEMENT},
+}
+
+
+def portee(kind, champ):
+    """Nom de la portée d'un champ (« physique », « invite », « calcul »), ou None s'il
+    vaut pour toute ligne de sa table."""
+    return _PORTEES.get(kind, {}).get(champ)
+
+
+def regles_pilote(kind, champ):
+    """Les règles à poser sur le champ qui décide, pour la page ; None sur les autres."""
+    pilote = PILOTES.get(kind)
+    if not pilote or pilote[0] != champ:
+        return None
+    return {nom: [mode, list(valeurs)] for nom, (mode, valeurs) in pilote[1].items()}
+
+
+COURANTE = object()
+
+
+def applicable(obj, champ, pilote=COURANTE):
+    """Le champ a-t-il un sens sur cette ligne ? `pilote` est la valeur du champ qui décide
+    quand elle est en train de changer — « ce nœud devient une VM » ouvre son vmid dans la
+    même saisie ; sinon, celle qui est enregistrée."""
+    if pilote is COURANTE and obj.kind in PILOTES:
+        pilote = obj.sel(PILOTES[obj.kind][0])
+    return applicable_pour(obj.kind, champ, pilote)
+
+
+def applicable_pour(kind, champ, pilote):
+    """Même question pour une ligne qui n'existe pas encore : `pilote` est la valeur
+    retenue pour le type (ou la catégorie)."""
+    nom = portee(kind, champ)
+    if nom is None:
         return True
-    virtuel = obj.sel("Type") in TYPES_VIRTUELS
-    if virtuel:
-        return champ not in PHYSIQUE_SEULEMENT
-    return champ not in INVITE_SEULEMENT
+    mode, valeurs = PILOTES[kind][1][nom]
+    dedans = pilote in valeurs
+    return dedans if mode == "dans" else not dedans
+
+
+def sans_objet(kind, valeurs):
+    """Champs de `valeurs` ({champ: valeur}) sans objet pour la ligne qu'elles décrivent."""
+    pilote = PILOTES.get(kind)
+    if not pilote:
+        return set()
+    return {c for c in valeurs if not applicable_pour(kind, c, valeurs.get(pilote[0]) or None)}
+
+
+def pilote_modifiable(obj):
+    """Le type (ou la catégorie) de cette ligne peut-il changer depuis un formulaire ? Sinon
+    rien ne révélera un champ sans objet : inutile de l'écrire dans la page."""
+    pilote = PILOTES.get(obj.kind)
+    return bool(pilote) and schema.editable(obj.kind, pilote[0], obj.source)
+
+
+def pilote_soumis(kind, valeurs):
+    """Valeur du champ qui décide, si `valeurs` ({champ: valeur}) la change ; COURANTE
+    sinon."""
+    pilote = PILOTES.get(kind)
+    if not pilote or pilote[0] not in valeurs:
+        return COURANTE
+    return valeurs[pilote[0]] or None
+
 
 # Libellés de saisie. Le nom du champ est exact mais parfois sec : `notes` en minuscules sur
 # une table et `Notes` sur une autre, `vmid`, `RAM_Gb`. La fiche en consultation affiche le
@@ -226,6 +306,8 @@ LIBELLES = {
     "Chipset": "Chipset", "Serial": "Numéro de série", "Ports": "Ports",
     "Speed_Mbps": "Vitesse (Mbit/s)", "Capacity_Gb": "Capacité (Go)", "Standard": "Norme",
     "Firmware": "Micrologiciel",
+    "VRAM_Gb": "Mémoire graphique (Go)", "Shared_memory": "Mémoire partagée",
+    "GPU_cores": "Cœurs graphiques", "Compute_API": "Interfaces de calcul",
 }
 
 # Précisions affichées sous un champ, là où la saisie a une conséquence non évidente.
@@ -242,6 +324,10 @@ NOTICES = {
     ("composant", "Speed_Mbps"): "En Mbit/s : 2500 pour 2,5 Gb/s, 10000 pour 10 Gb/s.",
     ("composant", "Capacity_Gb"): "En Go décimaux, ceux de l'étiquette : un disque de 1 To vaut 1000.",
     ("composant", "Assigned_to"): "La VM qui reçoit ce périphérique en passthrough, s'il y en a une.",
+    ("composant", "VRAM_Gb"): "Ce dont il dispose pour charger un modèle. Mémoire partagée : la part utilisable de la mémoire de la machine (sur un Mac, environ les deux tiers).",
+    ("composant", "Shared_memory"): "Coché pour un GPU intégré ou une puce Apple : sa mémoire est celle de la machine, et ce qu'il prend manque aux applications.",
+    ("composant", "GPU_cores"): "Cœurs graphiques, ou unités d'exécution : ce qui distingue un M2 à 8 cœurs d'un M2 à 10.",
+    ("composant", "Compute_API"): "Ce qu'une application peut lui demander : CUDA pour la plupart des outils d'IA, VA-API ou QSV pour un transcodage Jellyfin, Edge TPU pour Frigate.",
 }
 
 # Certaines précisions n'ont de sens qu'à la modification : prévenir qu'on change
@@ -256,6 +342,7 @@ NOTICES_CREATION = {
     ("cpu", "Name"): "Le modèle exact, sans les (R) et (TM) : « Intel Core i5-8500T », « Broadcom BCM2711 ».",
     ("composant", "Name"): "Ce qui le désigne pour toi : « Carte 4 × 2,5 GbE », « Clé Zigbee ».",
     ("composant", "Host"): "La machine dans laquelle il est installé ou branché.",
+    ("composant", "Category"): "GPU ou Accelerator : une ligne par unité. Un Mac Mini en a deux, son GPU et son Neural Engine.",
 }
 
 LIENS = {"lien:node": "node", "lien:application": "application", "lien1:node": "node",
@@ -340,6 +427,8 @@ def formulaire_creation(snap, kind, essentiels=False):
             "widget": widget,
             "libelle": LIBELLES.get(champ, champ),
             "notice": NOTICES_CREATION.get((kind, champ)) or aide_perso(snap, kind, champ),
+            "portee": portee(kind, champ),
+            "regles": regles_pilote(kind, champ),
             "valeur": [] if (widget == "multi" or widget in LIENS and not _simple(widget))
                       else (False if widget == "bool" else None),
             "options": options(snap, kind, champ) if widget in ("select", "multi") else [],
@@ -364,22 +453,30 @@ def cibles(snap, kind):
     return sorted(snap.by_kind.get(kind, {}).values(), key=lambda o: o.name.lower())
 
 
-def formulaire(snap, obj):
+def formulaire(snap, obj, pilote=COURANTE, tous=False):
     """Champs réellement modifiables sur cet objet, prêts à être rendus.
 
     Le filtre est `schema.editable()`, et lui seul : c'est la même fonction qui décide de
     la mention « manuel » affichée en consultation. Les deux écrans ne peuvent donc pas se
     contredire.
+
+    `tous` garde aussi les champs sans objet pour la valeur actuelle du type (ou de la
+    catégorie) : c'est le formulaire affiché, où la page les masque et les révèle selon le
+    choix fait. `pilote` évalue l'applicabilité pour une valeur qui est en train de changer.
     """
     champs = []
     for champ, widget in champs_de(snap, obj.kind):
-        if not schema.editable(obj.kind, champ, obj.source) or not applicable(obj, champ):
+        if not schema.editable(obj.kind, champ, obj.source):
+            continue
+        if not (tous and pilote_modifiable(obj)) and not applicable(obj, champ, pilote):
             continue
         champs.append({
             "champ": champ,
             "widget": widget,
             "libelle": LIBELLES.get(champ, champ),
             "notice": NOTICES.get((obj.kind, champ)) or aide_perso(snap, obj.kind, champ),
+            "portee": portee(obj.kind, champ),
+            "regles": regles_pilote(obj.kind, champ),
             "valeur": _actuel(obj, champ, widget),
             "options": options(snap, obj.kind, champ) if widget in ("select", "multi") else [],
             "cibles": cibles(snap, LIENS[widget]) if widget in LIENS else [],
@@ -705,6 +802,10 @@ class Redacteur:
 
         descripteurs = formulaire_creation(snap, kind)
         valeurs = _lire(snap, kind, descripteurs, donnees)
+        # Un formulaire affiché sans script envoie tous les champs, vmid d'un portable ou
+        # mémoire graphique d'une carte réseau compris : laissés de côté, pas refusés.
+        for champ in sans_objet(kind, valeurs):
+            del valeurs[champ]
 
         cle = CLE_NATURELLE[kind]
         if not valeurs.get(cle):
@@ -828,8 +929,14 @@ class Redacteur:
         Seuls les champs effectivement modifiés sont écrits : un champ absent reste
         intact, et le journal ne note que ce qui a réellement changé.
         """
-        modifiables = {c["champ"]: c for c in formulaire(snap, obj)}
-
+        # Un champ sans objet pour la ligne n'est pas un intrus : un formulaire affiché sans
+        # script les envoie tous. Il est simplement laissé de côté, selon le type (ou la
+        # catégorie) qui sort de cette même saisie.
+        modifiables = {c["champ"]: c for c in formulaire(snap, obj, tous=True)}
+        pilote = PILOTES.get(obj.kind, (None,))[0]
+        portes = set(donnees.getlist("soumis"))
+        valeur_pilote = pilote_soumis(obj.kind, {pilote: (donnees.get(f"champ.{pilote}") or "").strip()}
+                                      if pilote in portes else {})
         soumis = {clef[6:] for clef in donnees if clef.startswith("champ.")}
         intrus = soumis - set(modifiables) - set(hors_ligne)
         if intrus:
@@ -840,8 +947,10 @@ class Redacteur:
                 "Champs non modifiables sur cette ligne : " + ", ".join(sorted(intrus))
                 + ". La fiche a peut-être changé depuis l'ouverture du formulaire.")
 
+        retenus = [d for d in modifiables.values()
+                   if applicable(obj, d["champ"], valeur_pilote)]
         changements, payload = [], {}
-        for champ, nouveau in _lire(snap, obj.kind, list(modifiables.values()), donnees).items():
+        for champ, nouveau in _lire(snap, obj.kind, retenus, donnees).items():
             descr = modifiables[champ]
             if nouveau == descr["valeur"]:
                 continue
