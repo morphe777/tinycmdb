@@ -34,6 +34,16 @@ Liens principaux :
   (`Components`) ; un composant est installé dans un hôte (`Host`) et peut être attribué
   en passthrough à une VM (`Assigned_to`).
 
+## Les mises à jour d'images
+
+`Update_available` vient de Cup. Une image en `latest` est comparée par empreinte
+(l'image qui tourne contre le `latest` du registre) dès que sa version ne se réduit pas à
+des nombres — c'est le cas de toutes les images LinuxServer (`v26.09.3-ls301`) : la
+réponse est fiable, mais `Available_version` reste vide. Un `Update_available` vrai sans
+`Available_version` veut donc dire « une version plus récente existe, sans nom connu ».
+Un tag figé portant un suffixe de construction (`-ls301`) n'est pas vérifiable : Cup le
+déclare à jour quoi qu'il arrive.
+
 ## Le matériel
 
 Ce qu'il faut savoir pour raisonner sur une panne ou une conception, sans aller le

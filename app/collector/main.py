@@ -580,7 +580,11 @@ def run_cup_pass(client, cfg, cup_targets):
         if not row:
             continue
         mapped = _drop_none({
-            "Available_version": fields.get("available_version"),
+            # Vidée quand Cup se prononce sans la nommer (pas de mise à jour, ou comparaison
+            # par empreinte) : sans quoi une version annoncée par un passage précédent —
+            # parfois fausse, voir sources/docker.py:VERSION_COMPARABLE — restait affichée.
+            "Available_version": fields.get("available_version") or (
+                "" if "update_available" in fields else None),
             "Update_available": fields.get("update_available"),
         })
         if not mapped:

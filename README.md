@@ -570,7 +570,12 @@ Fields, table by table:
   (links → Application), `Notes`.
 - **Images** — `Reference`, `Registry`, `Repository`, `Tag`, `Digest_local`,
   `Available_version`, `Update_available` (boolean), `CVE_critical`, `CVE_high`,
-  `Last_scan`, `Last_seen` (date), `Notes`.
+  `Last_scan`, `Last_seen` (date), `Notes`. A `latest` image is checked against
+  the version in its OCI label when that label is plain numbers (`1.4.2`), and
+  by digest otherwise: Cup only compares tags of the same shape, so a build
+  suffix (`v26.09.3-ls301`, LinuxServer) never finds its successor and would
+  read as up to date. By digest, `Update_available` is reliable but
+  `Available_version` stays empty.
 - **IPAM** — `Address`, `IP_int` (number), `VLAN` (link → VLAN), `Type`
   (select), `Node` (link → Node), `FQDN`, `Hostname`, `MAC`, `Vendor`, `Status`
   (select), `Source` (select: Auto, Manual), `Last_seen` (date), `Notes`.

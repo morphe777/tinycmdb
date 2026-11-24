@@ -11,10 +11,19 @@ ce fait, exactement comme `Container.Host` : jamais interprété, juste rapport�
 """
 
 import logging
+import re
 
 import requests
 
 logger = logging.getLogger("cmdb.docker")
+
+# Une version que Cup sait comparer quand on la substitue à `latest` : des nombres, rien
+# d'autre. Cup ne compare un tag qu'aux tags de même forme, suffixe compris ; un suffixe
+# qui change à chaque construction (`v26.09.3-ls301` chez LinuxServer, `-r2` chez
+# Bitnami) ne retrouve donc jamais son successeur, et Cup répond « à jour » sans erreur —
+# BookStack et Kavita l'ont été des mois durant. Pour un `latest`, l'empreinte dit la même
+# chose sans ce piège ; on y perd seulement le nom de la version disponible.
+VERSION_COMPARABLE = re.compile(r"^v?\d+(\.\d+)*$")
 
 _STATUS_MAP = {
     "running": "Running",
@@ -66,14 +75,15 @@ def collect(host_url, cfg):
 
         # Comment vérifier les mises à jour avec Cup pour cette image (voir main.py:run_cup_pass) :
         # - tag déjà versionné ("15-alpine") -> Cup s'en sert directement, aucun accès Docker requis.
-        # - tag "latest" mais un label OCI donne la vraie version -> on la substitue au tag, même
-        #   comparaison fiable que ci-dessus, sans avoir besoin d'interroger le registre nous-mêmes.
-        # - "latest" sans label -> seule solution : comparaison par empreinte via le socket-proxy
-        #   de CET hôte (Cup a besoin d'accéder à l'image réellement présente, peu importe comment).
+        # - tag "latest" mais un label OCI donne la vraie version, faite de nombres seulement
+        #   (`1.4.2`) -> on la substitue au tag : Cup sait alors nommer la version disponible.
+        # - "latest" sans label, ou dont le label porte un suffixe de construction
+        #   (`v26.09.3-ls301`, voir VERSION_COMPARABLE) -> comparaison par empreinte via le
+        #   socket-proxy de CET hôte : l'image qui tourne contre le `latest` du registre.
         repo = repo_from_reference(image_ref)
         if parsed["tag"] and parsed["tag"] != "latest":
             cup_mode, cup_reference = "version", image_ref
-        elif resolved_version and repo:
+        elif resolved_version and repo and VERSION_COMPARABLE.match(resolved_version.strip()):
             cup_mode, cup_reference = "version", f"{repo}:{resolved_version}"
         else:
             cup_mode, cup_reference = "digest", image_ref
