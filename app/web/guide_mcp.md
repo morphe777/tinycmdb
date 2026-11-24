@@ -63,7 +63,12 @@ chercher ailleurs :
   par le collecteur puis restent à la main (une correction tient) ; `Reference`, `Ports`,
   `Speed_Mbps` (en Mbit/s : 2500 pour 2,5 Gb/s), `Standard`, `Firmware` se saisissent.
   Un disque qu'une VM reçoit derrière un contrôleur passé en entier n'est pas visible :
-  le contrôleur, si, attribué à la VM ;
+  le contrôleur, si, attribué à la VM. `Assigned_to` (« Utilisé par ») vide signifie que
+  l'hôte s'en sert lui-même. `PCI_id` est l'identité de la carte (`10de:2484 1462:3907` :
+  puce, puis carte) : une carte déplacée d'un emplacement ou d'un hôte à l'autre garde sa
+  ligne et ce qui y a été saisi — le collecteur reprend celle de la carte de même identité
+  qui vient de disparaître, s'il n'y en a qu'une ; le journal note le changement d'`UID`
+  et de `Host`. Un disque, lui, est identifié par son numéro de série où qu'il soit ;
 - **les GPU et accélérateurs** sont des composants (`Category` = `GPU` ou `Accelerator`),
   **une ligne par unité** : quatre cartes font quatre lignes, un Mac Mini en a une pour
   son GPU et une pour son Neural Engine, avec `Bus` = `SoC` quand l'unité est intégrée à

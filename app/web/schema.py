@@ -97,7 +97,7 @@ _IPAM_MANUAL_ROW = {
 # Un composant découvert : ce que Proxmox mesure est AUTO, ce qu'il devine est amorcé à la
 # création puis laissé à la main (voir plus haut), le reste n'est connu que de toi.
 _COMPOSANT = {
-    "UID": AUTO, "Bus": AUTO, "Host": AUTO, "Assigned_to": AUTO, "Chipset": AUTO,
+    "UID": AUTO, "Bus": AUTO, "Host": AUTO, "Assigned_to": AUTO, "Chipset": AUTO, "PCI_id": AUTO,
     "Address": AUTO, "IOMMU_group": AUTO, "Serial": AUTO, "Capacity_Gb": AUTO,
     "Usage": AUTO, "Health": AUTO, "Wearout": AUTO, "Source": AUTO, "Last_seen": AUTO,
     "Name": MANUEL, "Category": MANUEL, "Vendor": MANUEL, "Model": MANUEL,

@@ -202,6 +202,7 @@ TABLES = {
         Champ("Model", "texte", "model"),
         Champ("Reference", "texte", "reference"),
         Champ("Chipset", "texte", "chipset"),
+        Champ("PCI_id", "texte", "pci_id"),
         Champ("Address", "texte", "address"),
         Champ("IOMMU_group", "entier", "iommu_group"),
         Champ("Serial", "texte", "serial"),

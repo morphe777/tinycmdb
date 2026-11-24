@@ -302,7 +302,7 @@ LIBELLES = {
     "iGPU": "Graphique intégré", "Virtualization": "Virtualisation",
     "Max_RAM_Gb": "Mémoire maximale supportée (Go)",
     "Category": "Catégorie", "Bus": "Bus", "Host": "Installé dans",
-    "Assigned_to": "Attribué à (passthrough)", "Model": "Modèle", "Reference": "Référence",
+    "Assigned_to": "Utilisé par (VM en passthrough)", "Model": "Modèle", "Reference": "Référence",
     "Chipset": "Chipset", "Serial": "Numéro de série", "Ports": "Ports",
     "Speed_Mbps": "Vitesse (Mbit/s)", "Capacity_Gb": "Capacité (Go)", "Standard": "Norme",
     "Firmware": "Micrologiciel",

@@ -232,7 +232,7 @@ FICHE_FIELDS = {
     ],
     "composant": [
         ("Category", "select"), ("Bus", "select"), ("Vendor", "text"), ("Model", "text"),
-        ("Reference", "text"), ("Chipset", "text"), ("Address", "mono"),
+        ("Reference", "text"), ("Chipset", "text"), ("PCI_id", "mono"), ("Address", "mono"),
         ("IOMMU_group", "text"), ("Serial", "mono"), ("Ports", "text"),
         ("Speed_Mbps", "unit:Mbit/s"), ("Capacity_Gb", "unit:Go"), ("Standard", "select"),
         ("VRAM_Gb", "unit:Go"), ("Shared_memory", "bool"), ("GPU_cores", "text"),

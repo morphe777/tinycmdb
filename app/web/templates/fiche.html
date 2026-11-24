@@ -190,7 +190,7 @@
 
         {% elif obj.kind == 'composant' %}
           {{ rel("Installé dans", m.chaine(obj.host) if obj.host) }}
-          {{ rel("Attribué à", m.chaine(obj.assigned) if obj.assigned) }}
+          {{ rel("Utilisé par", m.chaine(obj.assigned) if obj.assigned) }}
 
         {% elif obj.kind == 'ipam' %}
           {{ rel("Nœud", m.chaine(obj.node) if obj.node) }}

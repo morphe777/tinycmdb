@@ -162,28 +162,41 @@ def run_component_pass(client, cfg, node_cache, hypervisors):
 
     Une famille qu'un hyperviseur n'a pas pu lister (droits, hôte éteint) garde ses lignes
     telles quelles : ne pas voir n'est pas constater une absence.
+
+    Une carte PCI qu'on déplace change de clé (`hôte/pci/emplacement`). Plutôt que d'en
+    créer une nouvelle et de laisser l'ancienne s'éteindre avec tout ce qui y avait été
+    saisi, la passe reprend la ligne d'une carte de même identité (`PCI_id`) qui vient de
+    disparaître — d'un autre hôte ou d'un autre emplacement. Les nouvelles cartes sont donc
+    écrites en dernier, une fois connu tout ce que les hyperviseurs ont montré.
     """
     cache = client.build_cache("composant", "UID")
     ci_nodes = _ci_node_index(node_cache)
     seen = set()
+    nouvelles = []
+
+    def ecrire(comp, fields):
+        try:
+            client.upsert(
+                cache, "composant", "UID", comp["uid"], fields,
+                manual_gate_field="Source", auto_label="Auto", last_seen_field="Last_seen",
+                create_only_fields=_drop_none(dict(comp.get("seed") or {})),
+            )
+            seen.add(comp["uid"])
+        except Exception:
+            logger.exception("Écriture composant '%s' en échec, composant suivant", comp.get("uid"))
 
     for hv in hypervisors:
         match = ci_nodes.get(hv["name"].lower())
         host_row = match[1] if match else None
         for comp in hv.get("components") or []:
-            try:
-                fields = _drop_none(dict(comp["fields"]))
-                fields["Host"] = [host_row["id"]] if host_row else []
-                cible = ci_nodes.get((comp.get("assigned_to") or "").lower())
-                fields["Assigned_to"] = [cible[1]["id"]] if cible else []
-                client.upsert(
-                    cache, "composant", "UID", comp["uid"], fields,
-                    manual_gate_field="Source", auto_label="Auto", last_seen_field="Last_seen",
-                    create_only_fields=_drop_none(dict(comp.get("seed") or {})),
-                )
-                seen.add(comp["uid"])
-            except Exception:
-                logger.exception("Écriture composant '%s' en échec, composant suivant", comp.get("uid"))
+            fields = _drop_none(dict(comp["fields"]))
+            fields["Host"] = [host_row["id"]] if host_row else []
+            cible = ci_nodes.get((comp.get("assigned_to") or "").lower())
+            fields["Assigned_to"] = [cible[1]["id"]] if cible else []
+            if comp["uid"] not in cache and fields.get("PCI_id"):
+                nouvelles.append((comp, fields))
+                continue
+            ecrire(comp, fields)
 
         muettes = {f for f, ok in (hv.get("hardware_ok") or {}).items() if not ok}
         if muettes and host_row:
@@ -192,10 +205,42 @@ def run_component_pass(client, cfg, node_cache, hypervisors):
                 if host_row["id"] in hotes and materiel.famille_uid(uid) in muettes:
                     seen.add(uid)
 
+    for comp, fields in nouvelles:
+        ancienne = _carte_deplacee(client, cache, seen, fields["PCI_id"])
+        if ancienne is not None:
+            uid_avant, row = ancienne
+            # La ligne change de clé : elle est réindexée sous la nouvelle, et `UID` part
+            # avec le reste des champs — le journal note le déplacement (UID, Host).
+            del cache[uid_avant]
+            cache[comp["uid"]] = row
+            fields = {**fields, "UID": comp["uid"]}
+            logger.info("~ composant déplacé : %s -> %s (%s)", uid_avant, comp["uid"],
+                        row.get("Name") or fields["PCI_id"])
+        ecrire(comp, fields)
+
     client.delete_missing(
         cache, "composant", seen, cfg.RETIRE_GRACE_HOURS,
         last_seen_field="Last_seen", manual_gate_field="Source",
     )
+
+
+def _carte_deplacee(client, cache, seen, pci_id):
+    """(uid, ligne) de la carte de même identité que le collecteur ne voit plus nulle
+    part, ou None.
+
+    Une seule candidate, sinon rien : deux cartes identiques disparues en même temps ne
+    disent pas laquelle est arrivée ici, et rattacher les saisies de l'une à l'autre serait
+    pire que de recommencer. Une ligne manuelle n'est jamais reprise — le collecteur n'y
+    touche pas. Une carte d'un hôte éteint est comptée comme vue (famille muette), elle
+    n'est donc pas candidate : elle n'a pas disparu, on ne la voit simplement pas.
+    """
+    candidates = [
+        (uid, row) for uid, row in cache.items()
+        if uid not in seen and materiel.famille_uid(uid) == "pci"
+        and row.get("PCI_id") == pci_id
+        and (client._select_value(row, "Source") or "").lower() != "manual"
+    ]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _load_vlan_networks(client, table_vlan):

@@ -335,6 +335,20 @@ def categorie_pci(classe, vendeur):
     return "Other", False
 
 
+def identite_pci(a):
+    """`10de:2484 1462:3907` : la puce, puis la carte. Ce que la carte est, et non où elle
+    est — c'est ce qui permet de la reconnaître quand elle change d'emplacement ou de
+    machine. None si l'hyperviseur ne donne pas au moins la puce."""
+    def paire(v, d):
+        v, d = _hex(v), _hex(d)
+        return f"{v:04x}:{d:04x}" if v is not None and d is not None else None
+    puce = paire(a.get("vendor"), a.get("device"))
+    if puce is None:
+        return None
+    carte = paire(a.get("subsystem_vendor"), a.get("subsystem_device"))
+    return f"{puce} {carte}" if carte else puce
+
+
 def composants_pci(hote, appareils, passes):
     """Les cartes d'un hyperviseur, une par emplacement, à partir de /hardware/pci.
 
@@ -380,6 +394,7 @@ def composants_pci(hote, appareils, passes):
             "fields": {
                 "Bus": "NVMe" if categorie == "Disk" else "PCIe",
                 "Chipset": " ".join(x for x in (fabricant, puce) if x) or None,
+                "PCI_id": identite_pci(principale),
                 "Address": e,
                 "IOMMU_group": groupe if isinstance(groupe, int) and groupe >= 0 else None,
             },

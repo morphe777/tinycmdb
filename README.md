@@ -589,7 +589,8 @@ Fields, table by table:
   controller, GPU, Accelerator, USB controller, USB device, Other), `Bus`,
   `Host` and `Assigned_to` (links → Node: where it is installed, which VM it is
   passed through to), `Vendor`, `Model`, `Reference`, `Chipset`, `Address`
-  (PCI slot, device path), `IOMMU_group`, `Serial`, `Ports`, `Speed_Mbps`,
+  (PCI slot, device path), `PCI_id` (vendor:device and subsystem ids),
+  `IOMMU_group`, `Serial`, `Ports`, `Speed_Mbps`,
   `Capacity_Gb`, `Standard` (select: 2.5GbE, Wi-Fi 6, USB 3.1, Zigbee…),
   `VRAM_Gb`, `Shared_memory`, `GPU_cores`, `Compute_API` (multi-select: CUDA,
   ROCm, Metal, VA-API, Edge TPU… — GPU and Accelerator only, typed in),
@@ -598,7 +599,10 @@ Fields, table by table:
   chipset functions left out unless a VM receives them. Name, category, vendor
   and model are the collector's guess from the PCI/USB ids, written once: a
   correction sticks. A GPU or an NPU is one row per unit: a Mac mini has one
-  for its GPU and one for its Neural Engine (`Bus` = SoC).
+  for its GPU and one for its Neural Engine (`Bus` = SoC). A PCI card moved to
+  another slot or host keeps its row and what was typed in: the collector takes
+  over the row of the card with the same `PCI_id` that just disappeared, when
+  there is exactly one (disks already follow their serial number).
 
 The reverse links (a node's containers, an image's containers) are not stored
 twice: they are computed. Fields of your own come on top, from *Administration
